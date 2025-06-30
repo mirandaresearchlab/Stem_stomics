@@ -19,6 +19,11 @@ conda env create -f environment.yml
 conda activate stem_env
 ```
 
+Or try the newly added uv setup:
+```
+uv sync
+```
+
 
 ## Preparing Datasets:
 All the datasets used in our paper could be downloaded from the [HEST](https://github.com/mahmoodlab/HEST) database.
