@@ -18,6 +18,7 @@ dist/
 venv/
 env/
 ENV/
+.env
 
 # ▶ uv temporary download/cache directory
 .uv-cache/
