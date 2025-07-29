@@ -1,4 +1,3 @@
-# src/myproject/settings/training.py
 from pathlib import Path
 from pydantic import BaseModel, Field, PositiveInt
 
