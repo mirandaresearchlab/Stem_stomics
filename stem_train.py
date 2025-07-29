@@ -23,6 +23,7 @@ from Stem.models import Stem_models
 from Stem.diffusion import create_diffusion
 from Stem.train_helper import *
 
+import wandb
 from pathlib import Path
 from .settings.training import TrainingConfig
 from .utils.config_loader import load_toml_config
@@ -66,6 +67,7 @@ class Trainer:
         self.args = model_args
         
         self.model = model
+        wandb.watch(self.model, log="all")
         self.ema = deepcopy(model).to(gpu_id)
         requires_grad(self.ema, False)
         self.model = DDP(self.model.to(gpu_id), device_ids=[self.gpu_id])
@@ -335,3 +337,5 @@ if __name__ == "__main__":
     # available_gpus = ["cuda:"+str(i) for i in range(world_size)]
     print("Available GPUs: ", available_gpus)
     main(world_size, available_gpus, cfg)
+
+    wandb.init(project="stomics", config=cfg)
