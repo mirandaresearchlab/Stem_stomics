@@ -3,37 +3,29 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 import torch.distributed as dist
-import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 import numpy as np
-from collections import OrderedDict
-from PIL import Image
 from copy import deepcopy
 from glob import glob
-import time
 import argparse
-import logging
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
-import tqdm
-from tqdm import tqdm
 import random
 import anndata
 
 import sys
-sys.path.append("./Stem")
+sys.path.append("./Stem_stomics")
 from Stem.models import Stem_models
 from Stem.diffusion import create_diffusion
 from Stem.train_helper import *
+
+from pathlib import Path
+from .settings.training import TrainingConfig
+from .utils.config_loader import load_toml_config
 
 
 class CustomDataset(Dataset):
@@ -270,13 +262,13 @@ def prepare_dataloader(args, dataset: Dataset, batch_size: int):
 
 def main(world_size: int, 
          available_gpus: list,
-         input_args):
+         cfg: TrainingConfig):
     
     # Set up DDP
     dist.init_process_group(backend="nccl", world_size=world_size)
     rank = dist.get_rank()
     device = available_gpus[rank]
-    seed = input_args.global_seed * dist.get_world_size() + rank
+    seed = cfg.global_seed * dist.get_world_size() + rank
     print("Rank: ", rank, " | Device: ", device, " | Seed: ", seed)
     # set random seed
     random.seed(seed)
@@ -288,65 +280,58 @@ def main(world_size: int,
     if rank == 0:
         print("Rank 0 mkdir & set up logger...")
         # mkdir for logs and checkpoints
-        os.makedirs(input_args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
-        experiment_index = len(glob(f"{input_args.results_dir}/*"))
-        input_args.experiment_dir = f"{input_args.results_dir}/{experiment_index:03d}"  # Create an experiment folder
-        input_args.checkpoint_dir = f"{input_args.experiment_dir}/checkpoints"  # Stores saved model checkpoints
-        os.makedirs(input_args.checkpoint_dir, exist_ok=True)
-        os.makedirs(f"{input_args.experiment_dir}/samples", exist_ok=True)      # Store sampling results
-        input_args.logger = create_logger(input_args.experiment_dir)
-        input_args.logger.info(f"Experiment directory created at {input_args.experiment_dir}")
+        os.makedirs(cfg.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
+        experiment_index = len(glob(f"{cfg.results_dir}/*"))
+        cfg.experiment_dir = f"{cfg.results_dir}/{experiment_index:03d}"  # Create an experiment folder
+        cfg.checkpoint_dir = f"{cfg.experiment_dir}/checkpoints"  # Stores saved model checkpoints
+        os.makedirs(cfg.checkpoint_dir, exist_ok=True)
+        os.makedirs(f"{cfg.experiment_dir}/samples", exist_ok=True)      # Store sampling results
+        cfg.logger = create_logger(cfg.experiment_dir)
+        cfg.logger.info(f"Experiment directory created at {cfg.experiment_dir}")
     else:
-        input_args.logger=create_logger(None)
-    input_args.logger.info(f"Rank: {rank} | Device: {device} | Seed: {seed}")
+        cfg.logger=create_logger(None)
+    cfg.logger.info(f"Rank: {rank} | Device: {device} | Seed: {seed}")
     
     # set up training objects
-    dataset, model, args = load_train_objs(input_args)
-    input_args.logger.info(f"Dataset, model, and args finished loading.")
+    dataset, model, args = load_train_objs(cfg)
+    cfg.logger.info(f"Dataset, model, and args finished loading.")
     train_data = prepare_dataloader(args, dataset, 
                                     int(args.global_batch_size // dist.get_world_size()))
-    input_args.logger.info(f"Dataloader finished loading.")
+    cfg.logger.info(f"Dataloader finished loading.")
     trainer = Trainer(model, train_data, 
                       rank, int(device.split(":")[-1]), 
                       args)
-    input_args.logger.info(f"Trainer finished loading.")
-    input_args.logger.info(f"Starting...")
+    cfg.logger.info(f"Trainer finished loading.")
+    cfg.logger.info(f"Starting...")
     trainer.train(args.total_epochs)
     destroy_process_group()
 
 
+def parse_args() -> Path:
+    parser = argparse.ArgumentParser(
+        description="Train DiT model using a TOML configuration file"
+    )
+    parser.add_argument(
+        "-c", "--config",
+        type=Path,
+        required=True,
+        metavar="FILE",
+        help="Path to the training TOML config (required)",
+    )
+    return parser.parse_args().config
+
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    # data related arguments
-    parser.add_argument("--expr_name", type=str, default="PRAD")
-    parser.add_argument("--data_path", type=str, default="./hest1k_datasets/PRAD/", help="Dataset path")
-    parser.add_argument("--results_dir", type=str, default="./PRAD_results/runs/", help="Path to hold runs")
-    parser.add_argument("--slide_out", type=str, default="MEND145", help="Test slide ID. Multiple slides separated by comma.") 
-    parser.add_argument("--folder_list_filename", type=str, default="all_slide_lst.txt", help="A txt file listing file names for all training and testing slides in the dataset")
-    parser.add_argument("--gene_list_filename", type=str, default="selected_gene_list.txt", help="Selected gene list")
-    parser.add_argument("--num_aug_ratio", type=int, default=7, help="Image augmentation ratio (int)")
-    
-    # model related arguments
-    parser.add_argument("--model", type=str, default="Stem")
-    parser.add_argument("--DiT_num_blocks", type=int, default=12, help="DiT depth")
-    parser.add_argument("--hidden_size", type=int, default=384, help="DiT hidden dimension")
-    parser.add_argument("--num_heads", type=int, default=6, help="DiT heads")
-    # training related arguments
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--total_epochs", type=int, default=4000)
-    parser.add_argument("--global_batch_size", type=int, default=256)
-    parser.add_argument("--global_seed", type=int, default=42)
-    parser.add_argument("--num_workers", type=int, default=1, help="Number of GPUs to run the job")
-    parser.add_argument("--ckpt_every", type=int, default=25000, help="Number of iterations to save checkpoints.")
-    
-    input_args = parser.parse_args()
+
+    cfg_path: Path = parse_args()
+    cfg: TrainingConfig = load_toml_config(cfg_path, TrainingConfig)
+    print("▶ loaded config:\n", cfg)
 
     ## set up available gpus
-    world_size = input_args.num_workers
+    world_size = cfg.num_workers
     ## specify GPU id
     available_gpus = ["cuda:6"] 
     ## or use all available GPU
     # available_gpus = ["cuda:"+str(i) for i in range(world_size)]
     print("Available GPUs: ", available_gpus)
-    main(world_size, available_gpus, input_args)
+    main(world_size, available_gpus, cfg)
