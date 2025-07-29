@@ -1,0 +1,21 @@
+[data]
+data_path            = "/storage/hest_data/hs_brain/"
+results_dir          = "/storage/hest_data/hs_brain/results/runs/"
+slide_out            = "MEND65"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename   = "selected_gene_list.txt"
+num_aug_ratio        = 7
+
+[model]
+model           = "Stem"
+DiT_num_blocks  = 12
+hidden_size     = 384
+num_heads       = 6
+
+[training]
+lr               = 1e-4
+total_epochs     = 4000
+global_batch_size = 256
+global_seed      = 42
+num_workers      = 5        # GPUs to run the job
+ckpt_every       = 25000    # iters between checkpoints
