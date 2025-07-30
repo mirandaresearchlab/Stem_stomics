@@ -61,7 +61,11 @@ Processed data would be saved in `$DATASETNAME/processed_data/`:
 ## Training and Sampling:
 To train **Stem** (change the number of nodes and/or number of processes per node for multi-GPU training):
 ```
-torchrun --standalone --nnodes=1 --nproc_per_node=1 scripts/stem_train.py [OPTIONS]
+torchrun --standalone --nnodes=1 --nproc_per_node=1 scripts/stem_train.py -c configs/training_example.toml
+```
+For using uv, just prepend `uv run`:
+```
+uv run torchrun --standalone --nnodes=1 --nproc_per_node=1 scripts/stem_train.py -c configs/training_example.toml
 ```
 
 The following block explains the optional arguments related to the input datasets. For all optional arguments, please refer to [stem_train.py](stem_train.py). 
