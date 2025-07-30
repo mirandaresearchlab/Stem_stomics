@@ -18,15 +18,15 @@ import random
 import anndata
 
 import sys
-sys.path.append("./Stem_stomics")
+# sys.path.append("./Stem")
 from Stem.models import Stem_models
 from Stem.diffusion import create_diffusion
 from Stem.train_helper import *
 
 import wandb
 from pathlib import Path
-from .settings.training import TrainingConfig
-from .utils.config_loader import load_toml_config
+from settings.training import TrainingConfig
+from utils.config_loader import load_toml_config
 
 
 class CustomDataset(Dataset):
@@ -139,16 +139,17 @@ class Trainer:
 
 
 def assemble_dataset(input_args):
+    data_path_str = str(input_args.data_path) + "/"  # convert Path to str for compatibility
     # load & assemble data
     # leave the test slide out
-    slidename_lst = list(np.genfromtxt(input_args.data_path + "processed_data/" + input_args.folder_list_filename, dtype=str))
+    slidename_lst = list(np.genfromtxt(data_path_str + "processed_data/" + input_args.folder_list_filename, dtype=str))
     for slide_out in input_args.slide_out.split(","):
         slidename_lst.remove(slide_out)
         input_args.logger.info(f"{slide_out} is held out for testing.")
     input_args.logger.info(f"Remaining {len(slidename_lst)} slides: {slidename_lst}")
 
     # load selected gene list
-    selected_genes = list(np.genfromtxt(input_args.data_path + "processed_data/" + input_args.gene_list_filename, dtype=str))
+    selected_genes = list(np.genfromtxt(data_path_str + "processed_data/" + input_args.gene_list_filename, dtype=str))
     input_args.input_gene_size = len(selected_genes)
     input_args.logger.info(f"Selected genes filename: {input_args.gene_list_filename} | len: {len(selected_genes)}")
 
@@ -160,22 +161,22 @@ def assemble_dataset(input_args):
     input_args.logger.info("Loading original data...")
     for sni in range(len(slidename_lst)):
         sample_name = slidename_lst[sni]
-        test_adata = anndata.read_h5ad(input_args.data_path + "st/" + sample_name + ".h5ad")
+        test_adata = anndata.read_h5ad(data_path_str + "st/" + sample_name + ".h5ad")
         test_count_mtx = pd.DataFrame(test_adata[:, selected_genes].X.toarray(), 
                                       columns=selected_genes, 
                                       index=[sample_name + "_" + str(i) for i in range(test_adata.shape[0])])
         
         if first_slide:
             all_count_mtx_ori = test_count_mtx
-            img_ebd_uni   = torch.load(input_args.data_path + "processed_data/1spot_uni_ebd/"   + sample_name + "_uni.pt",   map_location="cpu")
-            img_ebd_conch = torch.load(input_args.data_path + "processed_data/1spot_conch_ebd/" + sample_name + "_conch.pt", map_location="cpu")
+            img_ebd_uni   = torch.load(data_path_str + "processed_data/1spot_uni_ebd/"   + sample_name + "_uni.pt",   map_location="cpu")
+            img_ebd_conch = torch.load(data_path_str + "processed_data/1spot_conch_ebd/" + sample_name + "_conch.pt", map_location="cpu")
             all_img_ebd_ori = torch.cat([img_ebd_uni, img_ebd_conch], axis=1)
             input_args.logger.info(f"{sample_name} loaded, count_mtx shape: {all_count_mtx_ori.shape}  | img ebd shape: {all_img_ebd_ori.shape}")
             first_slide = False
             continue
         
-        img_ebd_uni   = torch.load(input_args.data_path + "processed_data/1spot_uni_ebd/"   + sample_name + "_uni.pt",   map_location="cpu")
-        img_ebd_conch = torch.load(input_args.data_path + "processed_data/1spot_conch_ebd/" + sample_name + "_conch.pt", map_location="cpu")
+        img_ebd_uni   = torch.load(data_path_str + "processed_data/1spot_uni_ebd/"   + sample_name + "_uni.pt",   map_location="cpu")
+        img_ebd_conch = torch.load(data_path_str + "processed_data/1spot_conch_ebd/" + sample_name + "_conch.pt", map_location="cpu")
         slide_img_ebd = torch.cat([img_ebd_uni, img_ebd_conch], axis=1)
         all_img_ebd_ori = torch.cat([all_img_ebd_ori, slide_img_ebd], axis=0)
         all_count_mtx_ori = np.concatenate((all_count_mtx_ori, test_count_mtx), axis=0)
@@ -190,15 +191,15 @@ def assemble_dataset(input_args):
         sample_name = slidename_lst[sni]
 
         if first_slide:
-            img_ebd_uni   = torch.load(input_args.data_path + "processed_data/1spot_uni_ebd_aug/"   + sample_name + "_uni_aug.pt",   map_location="cpu")
-            img_ebd_conch = torch.load(input_args.data_path + "processed_data/1spot_conch_ebd_aug/" + sample_name + "_conch_aug.pt", map_location="cpu")
+            img_ebd_uni   = torch.load(data_path_str + "processed_data/1spot_uni_ebd_aug/"   + sample_name + "_uni_aug.pt",   map_location="cpu")
+            img_ebd_conch = torch.load(data_path_str + "processed_data/1spot_conch_ebd_aug/" + sample_name + "_conch_aug.pt", map_location="cpu")
             all_img_ebd_aug = torch.cat([img_ebd_uni, img_ebd_conch], axis=-1)
             input_args.logger.info(f"With augmentation {sample_name} loaded, img_ebd_mtx shape: {all_img_ebd_aug.shape}, all_img_ebd shape: {all_img_ebd_aug.shape}")
             first_slide = False
             continue
         
-        img_ebd_uni   = torch.load(input_args.data_path + "processed_data/1spot_uni_ebd_aug/"   + sample_name + "_uni_aug.pt",   map_location="cpu")
-        img_ebd_conch = torch.load(input_args.data_path + "processed_data/1spot_conch_ebd_aug/" + sample_name + "_conch_aug.pt", map_location="cpu")
+        img_ebd_uni   = torch.load(data_path_str + "processed_data/1spot_uni_ebd_aug/"   + sample_name + "_uni_aug.pt",   map_location="cpu")
+        img_ebd_conch = torch.load(data_path_str + "processed_data/1spot_conch_ebd_aug/" + sample_name + "_conch_aug.pt", map_location="cpu")
         slide_img_ebd = torch.cat([img_ebd_uni, img_ebd_conch], axis=-1)
         all_img_ebd_aug = torch.cat([all_img_ebd_aug, slide_img_ebd], axis=0)
         input_args.logger.info(f"With augmentation {sample_name} loaded, img_ebd_mtx shape: {slide_img_ebd.shape}, all_img_ebd shape: {all_img_ebd_aug.shape}")
@@ -323,19 +324,17 @@ def parse_args() -> Path:
     return parser.parse_args().config
 
 
-if __name__ == "__main__":
 
+def _cli_entrypoint():
     cfg_path: Path = parse_args()
     cfg: TrainingConfig = load_toml_config(cfg_path, TrainingConfig)
     print("▶ loaded config:\n", cfg)
 
-    ## set up available gpus
-    world_size = cfg.num_workers
-    ## specify GPU id
-    available_gpus = ["cuda:6"] 
-    ## or use all available GPU
-    # available_gpus = ["cuda:"+str(i) for i in range(world_size)]
+    available_gpus = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
     print("Available GPUs: ", available_gpus)
-    main(world_size, available_gpus, cfg)
-
     wandb.init(project="stomics", config=cfg)
+    main(cfg.num_workers, available_gpus, cfg)
+
+
+if __name__ == "__main__":
+    _cli_entrypoint()

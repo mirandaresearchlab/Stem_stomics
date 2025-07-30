@@ -94,7 +94,7 @@ def parse_args() -> Path:
     )
     return parser.parse_args().config
 
-if __name__ == "__main__":
+def _cli_entrypoint():
     cfg_path = parse_args()
     cfg: InferenceConfig = load_toml_config(cfg_path, InferenceConfig)
     print("▶ loaded inference config:\n", cfg)
@@ -124,3 +124,6 @@ if __name__ == "__main__":
     print(len(cfg.dataset))
     
     main(cfg)
+
+if __name__ == "__main__":
+    _cli_entrypoint()

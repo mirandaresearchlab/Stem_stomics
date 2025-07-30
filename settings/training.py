@@ -1,7 +1,10 @@
 from pathlib import Path
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt, ConfigDict
 
 class TrainingConfig(BaseModel):
+    # enable post-hoc attributes
+    model_config = ConfigDict(extra='allow')  # sorry py wizards, I dont want to modify their code too much
+
     # -------- data ----------
     data_path: Path
     results_dir: Path

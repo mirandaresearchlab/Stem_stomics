@@ -17,5 +17,5 @@ lr               = 1e-4
 total_epochs     = 4000
 global_batch_size = 256
 global_seed      = 42
-num_workers      = 5        # GPUs to run the job
+num_workers      = 7        # GPUs to run the job
 ckpt_every       = 25000    # iters between checkpoints

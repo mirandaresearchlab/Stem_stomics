@@ -1,8 +1,12 @@
+[build-system]
+requires = ["hatchling>=1.24"]          # lightweight PEP-517 backend
+build-backend = "hatchling.build"
+
 [project]
-name            = "stem_env"
-version         = "0.2.0"
-description     = "Python + CUDA-12.1 stack managed by uv (migrated from Conda)"
-requires-python = ">=3.12,<3.13"
+name            = "stem-stomics"
+version         = "0.3.0"
+description     = "Diffusion-based spatial transcriptomics models (STEM)."
+requires-python = ">=3.11,<3.12"
 
 dependencies = [
   # ── core ───────────────────────────────────────────
@@ -22,6 +26,10 @@ dependencies = [
   "networkx==3.3",
   # ── misc ───────────────────────────────────────────
   "brotli==1.1.0",
+  "dotenv>=0.9.9",
+  "ipywidgets>=8.1.7",
+  "pydantic>=2.9.2",
+  "wandb>=0.21.0",
   # ── PyTorch (CUDA-12.1 wheels) ─────────────────────
   "torch==2.3.1+cu121",
   "torchvision==0.18.1+cu121",
@@ -43,12 +51,9 @@ dependencies = [
   "scanpy>=1.11.3",
   "anndata>=0.11.4",
   "timm>=0.9.16,<0.10",
+  # ── local packages ────────────────────────────────
   "uni",
   "conch",
-  "dotenv>=0.9.9",
-  "ipywidgets>=8.1.7",
-  "pydantic>=2.9.2",
-  "wandb>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -57,9 +62,19 @@ dev = [
   "setuptools>=69.5.1",
 ]
 
-# ----------------------------------------------------
-# uv configuration
-# ----------------------------------------------------
+[project.scripts]
+stem-train  = "scripts.stem_train:_cli_entrypoint"
+stem-sample = "scripts.stem_sample:_cli_entrypoint"
+
+[tool.hatch.build]
+packages = ["Stem", "settings", "scripts"]
+
+[tool.hatch.build.targets.wheel]
+include = [
+  "assets/**",
+  "configs/**",
+]
+
 [tool.uv]
 extra-index-url = ["https://download.pytorch.org/whl/cu121"]
 index-strategy  = "unsafe-best-match"

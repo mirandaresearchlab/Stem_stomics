@@ -1381,9 +1381,9 @@ wheels = [
 ]
 
 [[package]]
-name = "stem-env"
-version = "0.2.0"
-source = { virtual = "." }
+name = "stem-stomics"
+version = "0.3.0"
+source = { editable = "." }
 dependencies = [
     { name = "anndata" },
     { name = "brotli" },
