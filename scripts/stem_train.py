@@ -67,7 +67,7 @@ class Trainer:
         self.args = model_args
         
         self.model = model
-        wandb.watch(self.model, log="all")
+        wandb.watch(self.model, log="all", log_freq=100)
         self.ema = deepcopy(model).to(gpu_id)
         requires_grad(self.ema, False)
         self.model = DDP(self.model.to(gpu_id), device_ids=[self.gpu_id])
@@ -93,11 +93,16 @@ class Trainer:
         self.running_loss += loss.item()
         self.train_steps += 1
         self.log_steps += 1
-        if self.log_steps % 500 == 0:
+        if self.log_steps % 50 == 0:
             torch.cuda.synchronize()
             avg_loss = torch.tensor(self.running_loss / self.log_steps, device=x.device)
             dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
             avg_loss = avg_loss.item() / dist.get_world_size()
+
+            if self.rank == 0:
+                wandb.log({"train/loss": avg_loss,
+                           "step": self.train_steps})
+
             self.args.logger.info(f"Step={self.train_steps:07d} | Training Loss: {avg_loss:.5f}")
             self.running_loss = 0
             self.log_steps = 0
@@ -328,11 +333,12 @@ def parse_args() -> Path:
 def _cli_entrypoint():
     cfg_path: Path = parse_args()
     cfg: TrainingConfig = load_toml_config(cfg_path, TrainingConfig)
-    print("▶ loaded config:\n", cfg)
+
+    rank = int(os.environ.get("RANK", 0))
+    mode = "online" if rank == 0 else "disabled"
+    wandb.init(project="stomics", config=cfg, mode=mode)
 
     available_gpus = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
-    print("Available GPUs: ", available_gpus)
-    wandb.init(project="stomics", config=cfg)
     main(cfg.num_workers, available_gpus, cfg)
 
 
