@@ -13,9 +13,9 @@ data_path            = "/storage/hest_data/hs_brain/"
 
 [sampling]
 sample_num_per_cond  = 20
-num_sampling_steps   = 1000
+num_sampling_steps   = 10
 seed                 = 42
-sampling_batch_size  = 200
+sampling_batch_size  = 1024
 
 [paths]
 save_path            = "/storage/hest_data/hs_brain/results/runs/001/samples/"
