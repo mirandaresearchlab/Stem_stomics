@@ -50,7 +50,6 @@ pylint-report.txt
 *.orig
 
 # ▶ IDE / Editor folders
-.vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace

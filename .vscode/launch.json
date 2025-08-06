@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "stem_train (torchrun, active file)",
+      "type": "debugpy",
+      "request": "launch",
+
+      // run “python -m torch.distributed.run …”
+      "module": "torch.distributed.run",
+
+      "args": [
+        "--standalone",
+        "--nproc_per_node", "5",
+        "--rdzv-conf", "timeout=10",
+        "${workspaceFolder}/scripts/stem_train.py",
+        "-c", "${file}"            // ← active VS Code editor file
+      ],
+
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": true          // lets the debugger follow the worker processes
+    }
+  ]
+}
