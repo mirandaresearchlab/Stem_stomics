@@ -65,7 +65,11 @@ torchrun --standalone --nnodes=1 --nproc_per_node=1 scripts/stem_train.py -c con
 ```
 For using uv, just prepend `uv run`:
 ```
-uv run torchrun --standalone --nnodes=1 --nproc_per_node=1 scripts/stem_train.py -c configs/training_example.toml
+uv run torchrun --standalone --nproc_per_node=1 scripts/stem_train.py -c configs/training_example.toml
+```
+You can also add a timeout for the ranks to connect, in case you need to debug this:
+```
+uv run torchrun --standalone --nproc_per_node 5 --rdzv-conf timeout=10 scripts/stem_train.py -c configs/training_example.toml
 ```
 
 The following block explains the optional arguments related to the input datasets. For all optional arguments, please refer to [stem_train.py](stem_train.py). 
