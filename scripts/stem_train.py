@@ -17,8 +17,6 @@ import pandas as pd
 import random
 import anndata
 
-import sys
-# sys.path.append("./Stem")
 from Stem.models import Stem_models
 from Stem.diffusion import create_diffusion
 from Stem.train_helper import *
@@ -142,7 +140,8 @@ class Trainer:
         for epoch in range(max_epochs):
             self._run_epoch(epoch)
         # mandatory save at the end of training
-        self._save_checkpoint()   # TODO: implement a final checkpoint saving function to save the best one
+        if self.rank == 0:
+            self._save_checkpoint()   # TODO: implement a final checkpoint saving function to save the best one
 
 
 def assemble_dataset(input_args):
@@ -334,7 +333,7 @@ def parse_args() -> Path:
 
 def _cli_entrypoint():
     cfg_path: Path = parse_args()
-    cfg: TrainingConfig = load_toml_config(cfg_path, TrainingConfig)
+    cfg: TrainingConfig = load_toml_config(cfg_path, TrainingConfig, ["model", "data", "training"])
 
     rank = int(os.environ.get("RANK", 0))
     mode = "online" if rank == 0 else "disabled"
