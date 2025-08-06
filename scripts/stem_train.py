@@ -141,6 +141,8 @@ class Trainer:
         ##
         for epoch in range(max_epochs):
             self._run_epoch(epoch)
+        # mandatory save at the end of training
+        self._save_checkpoint()   # TODO: implement a final checkpoint saving function to save the best one
 
 
 def assemble_dataset(input_args):

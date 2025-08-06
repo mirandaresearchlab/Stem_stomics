@@ -18,4 +18,4 @@ total_epochs     = 10
 global_batch_size = 256
 global_seed      = 42
 num_workers      = 5        # GPUs to run the job
-ckpt_every       = 50    # iters between checkpoints
+ckpt_every       = 550
