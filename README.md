@@ -72,40 +72,12 @@ You can also add a timeout for the ranks to connect, in case you need to debug t
 uv run torchrun --standalone --nproc_per_node 5 --rdzv-conf timeout=10 scripts/stem_train.py -c configs/training_example.toml
 ```
 
-The following block explains the optional arguments related to the input datasets. For all optional arguments, please refer to [stem_train.py](stem_train.py). 
-
-```
-optional arguments relevant to the dataset:
-  --expr_name     (str) Experiment Name. [i.e. $DATASETNAME]
-  --data_path     (str) Path to the dataset. [i.e. ./hest1k_datasets/$DATASETNAME/]
-  --results_dir   (str) Path to save checkpoints. 
-  --slide_out     (str) Slide ID for test slide. Separated by comma if multiple hold-out slides. 
-                        [i.e. any slide ID(s) in hest1k_datasets/$DATASETNAME/processed_data/all_slide_lst.txt]
-  --folder_list_filename (str)
-                        A txt file listing file names for all training and testing slides in the dataset.
-                        [i.e.hest1k_datasets/$DATASETNAME/processed_data/all_slide_lst.txt]
-  --gene_list_filename   (str)
-                        A txt file listing selected genes.
-                        [i.e. any slide ID(s) in hest1k_datasets/$DATASETNAME/processed_data/all_slide_lst.txt]
-  --num_aug_ratio (int) Image augmentation folds.
-                        [i.e. 2 indicates the augmented image patches (randomly selected) will be 2 times more than the original image patches.]
-  
-```
-
 
 Sampling after training:
 ```
 python stem_sample.py [OPTIONS]
 ```
 
-The following block explains the optional arguments related to the test slide. For all optional arguments, please refer to [stem_sample.py](stem_sample.py). 
-
-```
-optional arguments relevant to the dataset:
---slide_out          (str)  Slide ID for one test slide. 
---gene_list_filename (str)  Same as training. 
-                            A txt file listing selected genes.
-```
 
 Output file structure for one experiment (i.e. No.000):
 > - $results_dir/000/
