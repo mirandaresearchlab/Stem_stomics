@@ -34,4 +34,4 @@ class InferenceConfig(BaseModel):
     ckpt: Path
 
     # ── device ─────────────────────────────────────────────────────
-    device: str = Field("cuda", regex="^(cpu|cuda.*)$")
+    device: str = Field("cuda", pattern=r"^(cpu|cuda.*)$")

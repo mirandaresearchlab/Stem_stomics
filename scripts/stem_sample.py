@@ -2,19 +2,17 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 from torch.utils.data import DataLoader, Dataset
-import sys
-sys.path.append("./Stem_omics")
+
 from Stem.models import Stem_models
 from Stem.diffusion import create_diffusion
 import argparse
-import pandas as pd
 import numpy as np
 import os
 
 from pathlib import Path
 
-from .settings.inference import InferenceConfig
-from .utils.config_loader import load_toml_config
+from settings.inference import InferenceConfig
+from utils.config_loader import load_toml_config
 
 class CustomDataset(Dataset):
     def __init__(self, x, y):
@@ -96,7 +94,8 @@ def parse_args() -> Path:
 
 def _cli_entrypoint():
     cfg_path = parse_args()
-    cfg: InferenceConfig = load_toml_config(cfg_path, InferenceConfig)
+    cfg: InferenceConfig = load_toml_config(
+        cfg_path, InferenceConfig, sections_to_flatten=["model", "data", "sampling", "paths"])
     print("▶ loaded inference config:\n", cfg)
 
     # load image patches

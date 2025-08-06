@@ -1,3 +1,5 @@
+device = "cuda"
+
 [model]
 model          = "Stem"
 DiT_num_blocks = 12
@@ -16,8 +18,5 @@ seed                 = 42
 sampling_batch_size  = 200
 
 [paths]
-save_path            = "/storage/hest_data/hs_brain/results/runs/000/samples/"
-ckpt                 = "/storage/hest_data/hs_brain/results/runs/000/checkpoints/0300000.pt"
-
-[device]
-device = "cuda"   # or "cpu"
+save_path            = "/storage/hest_data/hs_brain/results/runs/001/samples/"
+ckpt                 = "/storage/hest_data/hs_brain/results/runs/001/checkpoints/0002200.pt"
