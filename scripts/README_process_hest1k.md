@@ -7,8 +7,11 @@ What this script does
 - Extracts per-spot image patch embeddings using the CONCH and UNI encoders (same approach as
   in `dataset_preprocess.ipynb`).
 - Saves embeddings under `processed_data/` inside the configured `save_path` (or `data_path`).
-- Optionally computes a union of highly-variable genes across processed slides and writes to a customizable filename
-  (default: `processed_data/selected_gene_list.txt`).
+- Optionally computes and saves gene lists across processed slides: HVG (mean-ordered highly-variable genes),
+  HMHVG (high-mean/high-std genes), and DEG (union of per-group DEGs). Lists share the same base filename with
+  `_hvg` / `_hmhvg` / `_deg` suffixes (default base: `processed_data/selected_gene_list.txt`). For HER2ST, DEG labels
+  can be auto-injected from `deg_label_dir` (e.g., `data/ST-pat/lbl/<subseries>_labeled_coordinates.tsv`) using
+  the HEST metadata `subseries` column.
 
 Key points / compatibility notes
 ------------------------------
@@ -41,8 +44,12 @@ hf_token = ""
 
 # optional: run gene selection after embeddings
 run_gene_selection = true
-hvg_top_k = 2000
-num_genes_final = 200
+hvg_top_k = 2000   # set 0 to skip HVG output
+hmhvg_top_k = 200  # set 0 to skip HMHVG output
+deg_top_k = 0      # set >0 to enable DEG output; requires deg_groupby
+deg_groupby = ""   # e.g., "region" or other obs column with labels; if empty, defaults to 'region' and tries label injection
+deg_label_dir = "data/ST-pat/lbl"  # optional: per-slide region label files named <subseries>_labeled_coordinates.tsv
+# results will be written to `selected_gene_list_hvg.txt`, `_hmhvg.txt`, and `_deg.txt` (as enabled)
 ```
 
 How to run

@@ -60,3 +60,6 @@ Thumbs.db
 
 # weights & biases
 wandb/
+
+
+her2st_annotations/

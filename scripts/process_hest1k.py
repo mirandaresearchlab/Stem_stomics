@@ -5,7 +5,7 @@ This script re-uses the logic from `dataset_preprocess.ipynb` to:
 - load ST AnnData and corresponding H&E `*.tif` images,
 - extract per-spot image patch embeddings using CONCH and UNI (and optionally other models),
 - save processed embeddings under `processed_data/` in the configured save path,
-- optionally compute a union set of highly-variable genes across processed slides and save a selected gene list.
+- optionally compute and save two gene lists (HVG and HMHVG) across processed slides.
 
 Configuration is provided via a TOML file and validated with a Pydantic model. Use `-c / --config` to point to
 the TOML file. See `scripts/README_process_hest1k.md` for a minimal example.
@@ -98,8 +98,13 @@ class PreprocessConfig(BaseModel):
 
     # gene selection (optional)
     run_gene_selection: bool = False
-    hvg_top_k: int = 2000
-    num_genes_final: int = 200
+    hvg_top_k: int = 0           # size of final HVG list; 0 disables HVG output
+    hmhvg_top_k: int = 0         # size of final HMHVG list; 0 disables HMHVG output
+    deg_top_k: int = 0           # size per-group for DEG selection; 0 disables DEG output
+    deg_groupby: Optional[str] = None  # obs column to group by for DEG selection
+    deg_groups: Optional[List[str]] = None  # optional specific groups to test; defaults to all
+    deg_label_dir: Optional[Path] = Path("data/ST-pat/lbl")  # optional: directory with per-slide region labels
+    deg_subseries_column: str = "subseries"  # metadata column mapping id -> subseries (e.g., A1, B1)
     gene_list_filename: str = "selected_gene_list.txt"  # customize output filename for selected genes
 
     # error handling
@@ -170,6 +175,121 @@ def ensure_dirs(save_path: Path):
     (save_path / "processed_data/1spot_uni_ebd/").mkdir(parents=True, exist_ok=True)
     (save_path / "processed_data/1spot_conch_ebd_aug/").mkdir(parents=True, exist_ok=True)
     (save_path / "processed_data/1spot_uni_ebd_aug/").mkdir(parents=True, exist_ok=True)
+
+
+def _append_suffix_to_filename(filename: str, suffix: str) -> Path:
+    """Return a filename with suffix inserted before the extension, preserving subdirectories."""
+    base_path = Path(filename)
+    new_name = f"{base_path.stem}{suffix}{base_path.suffix}"
+    return base_path.with_name(new_name)
+
+
+def _load_metadata_for_deg(cfg: PreprocessConfig, logger: logging.Logger) -> Optional[pd.DataFrame]:
+    """Return metadata dataframe with id/subseries if available for DEG label mapping."""
+    # Priority: explicit metadata_path; fallback to ids_query.csv_path if present
+    meta_path = cfg.metadata_path or (cfg.ids_query.csv_path if cfg.selection_mode == "query" and cfg.ids_query and cfg.ids_query.csv_path else None)
+    if meta_path is None:
+        logger.warning("DEG: metadata_path not provided; cannot map subseries to ids for region labels")
+        return None
+    if not Path(meta_path).exists():
+        logger.warning(f"DEG: metadata_path {meta_path} not found; cannot map subseries to ids for region labels")
+        return None
+    try:
+        meta_df = pd.read_csv(meta_path)
+    except Exception as e:
+        logger.warning(f"DEG: failed to read metadata at {meta_path}: {e}")
+        return None
+    return meta_df
+
+
+def _get_label_path_for_id(sid: str, cfg: PreprocessConfig, meta_df: Optional[pd.DataFrame]) -> Optional[Path]:
+    """Resolve label file path for a given sample id using metadata subseries mapping."""
+    if meta_df is None or cfg.deg_label_dir is None:
+        return None
+    if cfg.deg_subseries_column not in meta_df.columns or "id" not in meta_df.columns:
+        return None
+    subseries_rows = meta_df.loc[meta_df["id"] == sid, cfg.deg_subseries_column]
+    if subseries_rows.empty:
+        return None
+    subseries = subseries_rows.iloc[0]
+    return Path(cfg.deg_label_dir) / f"{subseries}_labeled_coordinates.tsv"
+
+
+def _inject_region_labels_from_subseries(
+    adata: anndata.AnnData,
+    sid: str,
+    cfg: PreprocessConfig,
+    meta_df: Optional[pd.DataFrame],
+    logger: logging.Logger,
+    label_path: Optional[Path] = None,
+) -> anndata.AnnData:
+    """If deg_groupby column is missing, try to add it using subseries -> labeled_coordinates.tsv mapping."""
+    groupby = cfg.deg_groupby or "region"
+    if groupby in adata.obs:
+        return adata
+
+    if label_path is None:
+        label_path = _get_label_path_for_id(sid, cfg, meta_df)
+
+    if label_path is None:
+        logger.info(f"DEG: no label path resolved for {sid}; skipping label injection")
+        return adata
+    if not label_path.exists():
+        logger.info(f"DEG: label file not found for {sid}: {label_path}; skipping label injection")
+        return adata
+
+    try:
+        lbl = pd.read_csv(label_path, sep="\t")
+    except Exception as e:
+        logger.warning(f"DEG: failed to read label file {label_path}: {e}")
+        return adata
+    if "Row.names" not in lbl.columns or "label" not in lbl.columns:
+        logger.warning(f"DEG: label file {label_path} missing 'Row.names' or 'label' columns")
+        return adata
+
+    # Strategy 1: direct mapping using Row.names
+    label_map = dict(zip(lbl["Row.names"], lbl["label"]))
+    region_series_direct = adata.obs_names.map(label_map)
+    direct_hits = int(region_series_direct.notna().sum())
+
+    # Strategy 2: infer row/col keys from rounded x/y (label files use x≈row, y≈col)
+    lbl_round = lbl.copy()
+    # drop rows with non-finite coordinates before rounding
+    lbl_round = lbl_round[pd.notna(lbl_round["x"]) & pd.notna(lbl_round["y"])]
+    if not lbl_round.empty:
+        lbl_round["row_r"] = lbl_round["x"].round().astype(int)
+        lbl_round["col_r"] = lbl_round["y"].round().astype(int)
+        lbl_round["key_rc"] = lbl_round["row_r"].map(lambda v: f"{v:03d}") + "x" + lbl_round["col_r"].map(lambda v: f"{v:03d}")
+        label_map_round = dict(zip(lbl_round["key_rc"], lbl_round["label"]))
+        region_series_round = adata.obs_names.map(label_map_round)
+        round_hits = int(region_series_round.notna().sum())
+    else:
+        region_series_round = pd.Series([None] * adata.n_obs, index=adata.obs_names)
+        round_hits = 0
+
+    # choose better coverage
+    if round_hits > direct_hits:
+        region_series = region_series_round
+        missing = int(region_series.isna().sum())
+        logger.info(
+            f"DEG: using rounded x/y mapping for {sid} ({round_hits} matches vs {direct_hits} direct)"
+        )
+    else:
+        region_series = region_series_direct
+        missing = int(region_series.isna().sum())
+        if direct_hits > 0:
+            logger.info(
+                f"DEG: using Row.names mapping for {sid} ({direct_hits} matches)"
+            )
+        else:
+            logger.info(f"DEG: no Row.names matches for {sid}")
+
+    adata.obs[groupby] = region_series
+    if missing > 0:
+        logger.warning(f"DEG: {missing} spots in {sid} missing {groupby} labels after injection")
+    else:
+        logger.info(f"DEG: injected {groupby} labels for {sid} from {label_path}")
+    return adata
 
 
 def load_conch_and_uni(device: str = "cuda", logger: logging.Logger = None):
@@ -467,9 +587,11 @@ def run(cfg: PreprocessConfig):
             adata = anndata.read_h5ad((cfg.st_path or (cfg.data_path / "st")) / f"{sid}.h5ad")
             # reduce to common genes before HVG computation
             ad = adata[:, common_genes].copy()
+            sc.pp.filter_cells(ad, min_genes=1)
             sc.pp.filter_genes(ad, min_cells=1)
+            sc.pp.normalize_total(ad, inplace=True)
             sc.pp.log1p(ad)
-            sc.pp.highly_variable_genes(ad, n_top_genes=cfg.hvg_top_k)
+            sc.pp.highly_variable_genes(ad, n_top_genes=2000)   # using 2000 as in the original notebook
             hvg_count = int(ad.var["highly_variable"].sum())
             union_hvg = union_hvg.union(set(ad.var_names[ad.var["highly_variable"]]))
             logger.debug(f"{sid}: {hvg_count} highly-variable genes; union total: {len(union_hvg)}")
@@ -488,14 +610,127 @@ def run(cfg: PreprocessConfig):
         all_count_df.fillna(0, inplace=True)
         mean_order = all_count_df.mean(axis=0).sort_values(ascending=False).index
         std_order = all_count_df.std(axis=0).sort_values(ascending=False).index
-        num_genes = cfg.num_genes_final
-        selected_genes = sorted(list(set(mean_order[: num_genes * 2]).intersection(set(std_order[: num_genes * 2]))))[:num_genes]
-        out_fn = save_path / "processed_data" / cfg.gene_list_filename
-        out_fn.parent.mkdir(parents=True, exist_ok=True)
-        with out_fn.open("w") as f:
-            for g in selected_genes:
-                f.write(g + "\n")
-        logger.info(f"Saved {len(selected_genes)} selected genes to {out_fn}")
+        # HVG list: union HVGs ordered by mean expression (descending)
+        if cfg.hvg_top_k > 0:
+            hvg_genes = list(mean_order[: min(cfg.hvg_top_k, len(mean_order))])
+            hvg_out_fn = (
+                save_path / "processed_data" / _append_suffix_to_filename(cfg.gene_list_filename, "_hvg")
+            )
+            hvg_out_fn.parent.mkdir(parents=True, exist_ok=True)
+            with hvg_out_fn.open("w") as f:
+                for g in hvg_genes:
+                    f.write(g + "\n")
+            logger.info(f"Saved {len(hvg_genes)} HVG genes (mean-ordered) to {hvg_out_fn}")
+        else:
+            logger.info("HVG selection skipped (hvg_top_k=0)")
+
+        # HMHVG list: grow window one-by-one from hmhvg_top_k until the intersection is large enough
+        if cfg.hmhvg_top_k > 0:
+            max_len = min(len(mean_order), len(std_order))
+            window = min(cfg.hmhvg_top_k, max_len)
+            hmhvg_candidates = set()
+            while window <= max_len:
+                top_mean_set = set(mean_order[:window])
+                top_std_set = set(std_order[:window])
+                hmhvg_candidates = top_mean_set.intersection(top_std_set)
+                if len(hmhvg_candidates) >= cfg.hmhvg_top_k or window == max_len:
+                    break
+                window += 1
+
+            hmhvg_genes = sorted(list(hmhvg_candidates))[: min(cfg.hmhvg_top_k, len(hmhvg_candidates))]
+            if len(hmhvg_genes) < cfg.hmhvg_top_k:
+                logger.warning(
+                    f"Requested {cfg.hmhvg_top_k} HMHVG genes but only found {len(hmhvg_genes)} using window={window};"
+                    " consider increasing hmhvg_top_k if you need more."
+                )
+            hmhvg_out_fn = (
+                save_path / "processed_data" / _append_suffix_to_filename(cfg.gene_list_filename, "_hmhvg")
+            )
+            hmhvg_out_fn.parent.mkdir(parents=True, exist_ok=True)
+            with hmhvg_out_fn.open("w") as f:
+                for g in hmhvg_genes:
+                    f.write(g + "\n")
+            logger.info(f"Saved {len(hmhvg_genes)} HMHVG genes (high-mean/high-std) to {hmhvg_out_fn}")
+        else:
+            logger.info("HMHVG selection skipped (hmhvg_top_k=0)")
+
+        # DEG list: union of per-group DEGs across slides
+        if cfg.deg_top_k > 0:
+            meta_df = _load_metadata_for_deg(cfg, logger)
+            if not cfg.deg_groupby:
+                cfg.deg_groupby = "region"
+                logger.info("DEG: deg_groupby not set; defaulting to 'region'")
+
+            deg_union = []
+            for sid in processed:
+                logger.debug(f"Computing DEGs for {sid} grouped by '{cfg.deg_groupby}'")
+                adata = anndata.read_h5ad((cfg.st_path or (cfg.data_path / "st")) / f"{sid}.h5ad")
+                if cfg.deg_groupby not in adata.obs:
+                    label_path = _get_label_path_for_id(sid, cfg, meta_df)
+                    if label_path is None or not label_path.exists():
+                        logger.info(
+                            f"DEG: no label file for {sid} (expected {label_path}); skipping slide for DEG"
+                        )
+                        continue
+                    adata = _inject_region_labels_from_subseries(adata, sid, cfg, meta_df, logger, label_path=label_path)
+                if cfg.deg_groupby not in adata.obs:
+                    logger.warning(
+                        f"DEG: column '{cfg.deg_groupby}' not found in obs for {sid} and injection failed; skipping slide for DEG"
+                    )
+                    continue
+                # drop unlabeled spots before DEG
+                labeled_mask = ~adata.obs[cfg.deg_groupby].isna()
+                if labeled_mask.sum() == 0:
+                    logger.warning(f"DEG: no labeled spots for {sid} after injection; skipping slide for DEG")
+                    continue
+                ad = adata[labeled_mask, common_genes].copy()
+                sc.pp.filter_cells(ad, min_genes=1)
+                sc.pp.filter_genes(ad, min_cells=1)
+                sc.pp.normalize_total(ad, inplace=True)
+                sc.pp.log1p(ad)
+                groups_arg = cfg.deg_groups if cfg.deg_groups else ad.obs[cfg.deg_groupby].unique().tolist()
+                if len(groups_arg) == 0:
+                    logger.warning(f"DEG: no groups found for {sid}; skipping slide for DEG")
+                    continue
+                sc.tl.rank_genes_groups(
+                    ad,
+                    groupby=cfg.deg_groupby,
+                    n_genes=cfg.deg_top_k,
+                    groups=groups_arg,
+                )
+                deg_names = ad.uns["rank_genes_groups"]["names"]
+                # deg_names can be dict-like or ndarray/recarray; normalize to columns
+                try:
+                    columns = deg_names.T
+                except Exception:
+                    # fallback for dict-like
+                    if isinstance(deg_names, dict):
+                        columns = deg_names.values()
+                    else:
+                        columns = []
+                for col in columns:
+                    try:
+                        deg_union.extend(list(col[: cfg.deg_top_k]))
+                    except Exception:
+                        # some scanpy versions return a 0-d object; try flattening
+                        try:
+                            deg_union.extend(list(col)[0: cfg.deg_top_k])
+                        except Exception:
+                            logger.warning("DEG: could not parse rank_genes_groups names column; skipping a column")
+                logger.debug(f"{sid}: DEG collected genes count now {len(deg_union)}")
+
+            # Final cap: deduplicate and cap to deg_top_k
+            deg_genes = sorted(list(dict.fromkeys(deg_union)))[: cfg.deg_top_k]
+            deg_out_fn = (
+                save_path / "processed_data" / _append_suffix_to_filename(cfg.gene_list_filename, "_deg")
+            )
+            deg_out_fn.parent.mkdir(parents=True, exist_ok=True)
+            with deg_out_fn.open("w") as f:
+                for g in deg_genes:
+                    f.write(g + "\n")
+            logger.info(f"Saved {len(deg_genes)} DEG genes (union across groups/slides) to {deg_out_fn}")
+        else:
+            logger.info("DEG selection skipped (deg_top_k=0)")
     
     # final summary
     logger.info("="*80)

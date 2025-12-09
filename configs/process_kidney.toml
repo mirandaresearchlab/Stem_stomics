@@ -4,7 +4,8 @@
 # - 'both' (default): extract image embeddings and (optionally) run gene selection
 # - 'images': extract only image embeddings (skips gene selection)
 # - 'genes': skip image embedding extraction and run gene selection only
-process_mode = "both"
+# process_mode = "both"
+process_mode = "genes"
 
 # error handling: if true, stop on first error; if false, continue and collect failures
 halt_on_error = true
@@ -21,9 +22,10 @@ save_augmented = true
 
 # optional gene selection (only runs when process_mode is 'both' or 'genes')
 run_gene_selection = true
-hvg_top_k = 2000
-num_genes_final = 200
-gene_list_filename = "selected_gene_list_2k_200.txt"  # customize output filename to avoid overwrites
+hvg_top_k = 200   # set to 0 to skip HVG output
+hmhvg_top_k = 200  # set to 0 to skip HMHVG output
+deg_top_k = 0      # set >0 to enable DEG output; requires deg_groupby
+gene_list_filename = "selected_gene_list_200.txt"  # customize output filename to avoid overwrites
 
 # If selection_mode = 'list', provide ids_to_query or ids_file
 ids_to_query = ["MEND65", "MISC3", "NCBI631"]

@@ -2,7 +2,8 @@
 # - 'both' (default): extract image embeddings and (optionally) run gene selection
 # - 'images': extract only image embeddings (skips gene selection)
 # - 'genes': skip image embedding extraction and run gene selection only
-process_mode = "both"
+# process_mode = "both"
+process_mode = "genes"
 
 # error handling: if true, stop on first error; if false, continue and collect failures
 halt_on_error = true
@@ -19,9 +20,12 @@ save_augmented = true
 
 # optional gene selection (only runs when process_mode is 'both' or 'genes')
 run_gene_selection = true
-hvg_top_k = 2000
-num_genes_final = 300
-gene_list_filename = "selected_gene_list_2k_300.txt"  # customize output filename to avoid overwrites
+hvg_top_k = 0   # set to 0 to skip HVG output
+hmhvg_top_k = 300  # set to 0 to skip HMHVG output
+deg_top_k = 296    # DEGs as in paper; adjust/disable by setting to 0
+deg_groupby = "region"  # obs column with region labels (set appropriately for your data)
+deg_label_dir = "/storage/her2st/data/ST-pat/lbl"  # per-slide region label files named <subseries>_labeled_coordinates.tsv
+gene_list_filename = "selected_gene_list.txt"  # customize output filename to avoid overwrites
 
 # If selection_mode = 'list', provide ids_to_query or ids_file
 ids_to_query = ["MEND65", "MISC3", "NCBI631"]
