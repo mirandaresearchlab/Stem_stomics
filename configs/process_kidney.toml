@@ -1,9 +1,4 @@
 # Example TOML config for scripts/process_hest1k.py
-[paths]
-data_path = "/storage/hest1k"
-tif_path = "/storage/hest1k/wsis"
-st_path = "/storage/hest1k/st"
-save_path = "/storage/hest1k/kidney"
 
 # Processing mode: 'both', 'images', or 'genes'
 # - 'both' (default): extract image embeddings and (optionally) run gene selection
@@ -11,24 +6,11 @@ save_path = "/storage/hest1k/kidney"
 # - 'genes': skip image embedding extraction and run gene selection only
 process_mode = "both"
 
+# error handling: if true, stop on first error; if false, continue and collect failures
+halt_on_error = true
+
 # Selection mode: 'list' or 'query'
 selection_mode = "query"
-
-# If selection_mode = 'list', provide ids_to_query or ids_file
-ids_to_query = ["MEND65", "MISC3", "NCBI631"]
-
-# If selection_mode = 'query', provide an `ids_query` table. Example below uses a
-# startswith(query) against the `dataset_title` column in the HEST metadata CSV.
-[ids_query]
-# csv_path can be a local path. If omitted, script will try to load the metadata CSV
-# from HuggingFace at:
-# https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_1_0.csv
-csv_path = "/storage/hest1k/HEST_v1_1_0.csv"
-column = "dataset_title"
-method = "startswith"
-pattern = "Spatial localization with Spatial Transcriptomics for an atlas of healthy and injured cell states"
-# optional exact-match filters
-#filters = { disease_state = "Healthy" }
 
 # runtime
 device = "cuda"
@@ -43,5 +25,25 @@ hvg_top_k = 2000
 num_genes_final = 200
 gene_list_filename = "selected_gene_list_2k_200.txt"  # customize output filename to avoid overwrites
 
-# error handling: if true, stop on first error; if false, continue and collect failures
-halt_on_error = true
+# If selection_mode = 'list', provide ids_to_query or ids_file
+ids_to_query = ["MEND65", "MISC3", "NCBI631"]
+
+# dataset paths
+[paths]
+data_path = "/storage/hest1k"
+tif_path = "/storage/hest1k/wsis"
+st_path = "/storage/hest1k/st"
+save_path = "/storage/hest1k/kidney"
+
+# If selection_mode = 'query', provide an `ids_query` table. Example below uses a
+# startswith(query) against the `dataset_title` column in the HEST metadata CSV.
+[ids_query]
+# csv_path can be a local path. If omitted, script will try to load the metadata CSV
+# from HuggingFace at:
+# https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_1_0.csv
+csv_path = "/storage/hest1k/HEST_v1_1_0.csv"
+column = "dataset_title"
+method = "startswith"
+pattern = "Spatial localization with Spatial Transcriptomics for an atlas of healthy and injured cell states"
+# optional exact-match filters
+#filters = { disease_state = "Healthy" }
