@@ -732,6 +732,15 @@ def run(cfg: PreprocessConfig):
         else:
             logger.info("DEG selection skipped (deg_top_k=0)")
     
+    # Save all_slide_lst.txt with successfully processed sample IDs
+    if processed:
+        all_slide_lst_fn = save_path / "processed_data/all_slide_lst.txt"
+        all_slide_lst_fn.parent.mkdir(parents=True, exist_ok=True)
+        with all_slide_lst_fn.open("w") as f:
+            for sid in processed:
+                f.write(sid + "\n")
+        logger.info(f"Saved {len(processed)} processed sample IDs to {all_slide_lst_fn}")
+    
     # final summary
     logger.info("="*80)
     logger.info(f"Processing complete. Successfully processed: {len(processed)}/{len(ids)}")
