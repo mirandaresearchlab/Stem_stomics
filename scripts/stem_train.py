@@ -167,7 +167,11 @@ def assemble_dataset(input_args):
     input_args.logger.info("Loading original data...")
     for sni in range(len(slidename_lst)):
         sample_name = slidename_lst[sni]
-        test_adata = anndata.read_h5ad(data_path_str + "st/" + sample_name + ".h5ad")
+        try:
+            test_adata = anndata.read_h5ad(data_path_str + "st/" + sample_name + ".h5ad")
+        except:
+            test_adata = anndata.read_h5ad(data_path_str + "../st/" + sample_name + ".h5ad")
+
         test_count_mtx = pd.DataFrame(test_adata[:, selected_genes].X.toarray(), 
                                       columns=selected_genes, 
                                       index=[sample_name + "_" + str(i) for i in range(test_adata.shape[0])])
