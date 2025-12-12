@@ -1,0 +1,21 @@
+[data]
+data_path            = "/storage/hest1k/her2st/"
+results_dir          = "/storage/hest1k/her2st/results/runs_300_hmhvg/"
+slide_out            = "SPA148"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename   = "selected_gene_list_hmhvg.txt"
+num_aug_ratio        = 7
+
+[model]
+model           = "Stem"
+DiT_num_blocks  = 12
+hidden_size     = 384
+num_heads       = 6
+
+[training]
+lr               = 1e-4
+total_epochs     = 316 #todo: figure out the epochs for this dataset and change this
+global_batch_size = 256
+global_seed      = 42
+num_workers      = 1        # GPUs to run the job
+ckpt_every       = 550
