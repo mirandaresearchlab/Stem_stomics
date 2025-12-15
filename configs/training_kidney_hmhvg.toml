@@ -1,11 +1,9 @@
 [data]
 data_path            = "/storage/hest1k/kidney/"
-results_dir          = "/storage/hest1k/kidney/results/runs_200_hvg/"
-# results_dir          = "/storage/hest1k/kidney/results/runs_200_hmhvg/"
+results_dir          = "/storage/hest1k/kidney/results/runs_200_hmhvg/"
 slide_out            = "NCBI694"
 folder_list_filename = "all_slide_lst.txt"
-gene_list_filename   = "selected_gene_list_200_hvg.txt"
-# gene_list_filename   = "selected_gene_list_200_hmhvg.txt"
+gene_list_filename   = "selected_gene_list_200_hmhvg.txt"
 num_aug_ratio        = 7
 
 [model]
