@@ -1,0 +1,22 @@
+device = "cuda"
+
+[model]
+model = "Stem"
+DiT_num_blocks = 12
+hidden_size = 384
+num_heads = 6
+
+[data]
+slide_out = "NCBI694"
+gene_list_filename = "selected_gene_list_200_hvg.txt"
+data_path = "/storage/hest1k/kidney/"
+
+[sampling]
+sample_num_per_cond = 20
+num_sampling_steps = 10
+seed = 42
+sampling_batch_size = 1024
+
+[paths]
+save_path = "/storage/hest1k/kidney/results/runs_200_hmhvg/000/samples/"
+ckpt = "/storage/hest1k/kidney/results/runs_200_hmhvg/000/checkpoints/0249640.pt"
