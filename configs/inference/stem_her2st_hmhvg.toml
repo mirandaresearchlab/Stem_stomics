@@ -13,10 +13,10 @@ data_path = "/storage/hest1k/her2st/"
 
 [sampling]
 sample_num_per_cond = 20
-num_sampling_steps = 10
+num_sampling_steps = 1000
 seed = 42
 sampling_batch_size = 1024
 
 [paths]
 save_path = "/storage/hest1k/her2st/results/runs_300_hmhvg/000/samples/"
-ckpt = "/storage/hest1k/her2st/results/runs_300_hmhvg/000/checkpoints/0178750.pt"
+ckpt = "/storage/hest1k/her2st/results/runs_300_hmhvg/000/checkpoints/0223300.pt"

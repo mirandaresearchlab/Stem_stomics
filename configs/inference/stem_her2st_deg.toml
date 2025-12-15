@@ -8,7 +8,7 @@ num_heads = 6
 
 [data]
 slide_out = "SPA148"
-gene_list_filename = "selected_gene_list_hmhvg.txt"
+gene_list_filename = "selected_gene_list_deg.txt"
 data_path = "/storage/hest1k/her2st/"
 
 [sampling]
