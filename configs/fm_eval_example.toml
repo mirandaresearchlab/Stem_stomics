@@ -1,0 +1,17 @@
+[data]
+data_path = "/storage/hest_data/hs_brain/"
+processed_subdir = "processed_data"
+st_subdir = "st"
+slide_out = "MEND65"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list.txt"
+
+[eval]
+# Path to FM predictions (multiple noises per spot)
+sample_path = "/storage/hest_data/hs_brain/results/fm_runs/001/samples/fm_generated_samples_0002200_20sample.pt"
+# Where to save metrics and plots
+results_dir = "/storage/hest_data/hs_brain/results/fm_runs/001/eval/"
+# Use the standard scripts/eval.py; set num_rep/num_selected to the FM sample count.
+num_rep = 20
+num_selected = 20
+seed = 42

@@ -1,0 +1,14 @@
+[data]
+data_path = "/storage/hest1k/kidney/"
+processed_subdir = "processed_data"
+st_subdir = "st"
+slide_out = "NCBI694"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list_200_hmhvg.txt"
+
+[eval]
+sample_path = "/storage/hest1k/kidney/results/fm_runs_200_hmhvg/001/samples/fm_generated_samples_0249640_20sample.pt"
+results_dir = "/storage/hest1k/kidney/results/fm_runs_200_hmhvg/001/eval/"
+num_rep = 20
+num_selected = 20
+seed = 42

@@ -1,0 +1,26 @@
+device = "cuda"
+
+[model]
+model = "Stem"
+DiT_num_blocks = 12
+hidden_size = 384
+num_heads = 6
+
+[data]
+slide_out = "MEND65"
+gene_list_filename = "selected_gene_list.txt"
+data_path = "/storage/hest_data/hs_brain/"
+
+[sampling]
+sample_num_per_cond = 20
+num_sampling_steps = 50
+seed = 42
+sampling_batch_size = 1024
+
+[paths]
+save_path = "/storage/hest_data/hs_brain/results/fm_runs/001/samples/"
+ckpt = "/storage/hest_data/hs_brain/results/fm_runs/001/checkpoints/0002200.pt"
+
+[flow]
+time_scale = 1.0
+time_eps = 0.001

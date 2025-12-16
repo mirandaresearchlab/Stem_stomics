@@ -1,0 +1,25 @@
+[data]
+data_path = "/storage/hest1k/kidney/"
+results_dir = "/storage/hest1k/kidney/results/fm_runs_200_hmhvg/"
+slide_out = "NCBI694"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list_200_hmhvg.txt"
+num_aug_ratio = 7
+
+[model]
+model = "Stem"
+DiT_num_blocks = 12
+hidden_size = 384
+num_heads = 6
+
+[training]
+lr = 1e-4
+total_epochs = 316
+global_batch_size = 256
+global_seed = 42
+num_workers = 1
+ckpt_every = 550
+
+[flow]
+time_scale = 1.0
+time_eps = 0.001
