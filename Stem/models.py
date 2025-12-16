@@ -117,10 +117,10 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, out_channels=2):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, 2, bias=True)
+        self.linear = nn.Linear(hidden_size, out_channels, bias=True)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size, 2 * hidden_size, bias=True)
@@ -167,7 +167,10 @@ class StemModel(nn.Module):
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
         
-        self.final_layer = FinalLayer(self.hidden_size)
+        # For DDPM, learn_sigma=True, resulting in 2 channels (mean and sigma). For flow matching,
+        # set learn_sigma=False to emit a single velocity channel.
+        out_channels = 2 if self.learn_sigma else 1
+        self.final_layer = FinalLayer(self.hidden_size, out_channels=out_channels)
         self.initialize_weights()
 
     def initialize_weights(self):
