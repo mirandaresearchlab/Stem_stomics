@@ -1,0 +1,14 @@
+[data]
+data_path = "/storage/hest1k/her2st/"
+processed_subdir = "processed_data"
+st_subdir = "st"
+slide_out = "SPA148"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list_hmhvg.txt"
+
+[eval]
+sample_path = "/storage/hest1k/her2st/results/runs_300_hmhvg/000/samples/generated_samples_0223300_20sample.pt"
+results_dir = "/storage/hest1k/her2st/results/runs_300_hmhvg/eval/"
+num_rep = 20
+num_selected = 20
+seed = 42

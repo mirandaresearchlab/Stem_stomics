@@ -1,0 +1,17 @@
+[data]
+data_path = "/storage/hest_data/hs_brain/"
+processed_subdir = "processed_data"
+st_subdir = "st"
+slide_out = "MEND65"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list.txt"
+
+[eval]
+# Path to generated samples produced by sampling script
+sample_path = "/storage/hest_data/hs_brain/results/runs/001/samples/generated_samples_0002200_20sample.pt"
+# Where to save metrics and plots
+results_dir = "/storage/hest_data/hs_brain/results/eval/"
+# Sampling hyperparams used when generating the file above
+num_rep = 20
+num_selected = 20
+seed = 42
