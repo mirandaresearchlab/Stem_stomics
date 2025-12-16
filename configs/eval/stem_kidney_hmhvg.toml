@@ -7,8 +7,8 @@ folder_list_filename = "all_slide_lst.txt"
 gene_list_filename = "selected_gene_list_200_hmhvg.txt"
 
 [eval]
-sample_path = "/storage/hest1k/kidney/results/runs_200_hmhvg/000/samples/generated_samples_0249640_20sample.pt"#TODO
-results_dir = "/storage/hest1k/kidney/results/runs_200_hvg/eval/"
+sample_path = "/storage/hest1k/kidney/results/runs_200_hmhvg/000/samples/generated_samples_0249640_20sample.pt"
+results_dir = "/storage/hest1k/kidney/results/runs_200_hmhvg/eval/"
 num_rep = 20
 num_selected = 20
-seed = 0
+seed = 42
