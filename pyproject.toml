@@ -56,6 +56,9 @@ dependencies = [
   "conch",
   "jupyterlab>=4.5.0",
   "datasets>=4.4.1",
+  "mygene>=3.2.2",
+  "aiohttp>=3.10.10",
+  "sentence-transformers>=3.2.0",
 ]
 
 [project.optional-dependencies]
