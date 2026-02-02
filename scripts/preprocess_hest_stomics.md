@@ -1,6 +1,6 @@
 # preprocess_hest_stomics: preprocessing pipeline
 
-This script normalizes gene names, groups samples by gene panel, filters genes, saves per-sample processed AnnData files, and builds text embeddings for downstream use. It is meant to be run as a CLI:
+This script normalizes gene names, groups samples by gene panel, filters genes, saves per-sample processed AnnData files, generates patches, and builds text embeddings for downstream use. It is meant to be run as a CLI:
 
 ```
 python scripts/preprocess_hest_stomics.py \
@@ -10,15 +10,20 @@ python scripts/preprocess_hest_stomics.py \
 ```
 
 ## Inputs
-- Metadata CSV (`--metadata`), expected to contain at least: `id`, `dataset_title`, `species`, `st_technology`, `organ`, `preservation_method`.
+- Metadata CSV (`--metadata`) with `id`, `dataset_title`, `species`, `st_technology`, `organ`, `preservation_method`, `pixel_size_um_embedded/estimated`, `spot_diameter`.
 - Directory with ST `.h5ad` files (`--st-path`), one per `id`.
+- Root directory with slide `.tif/.tiff` WSIs (`--tif-root`), expected as `<id>.tif`. Used for patch extraction.
 
-## Steps (in order)
+## Pipe
 1) **Logging**: writes to stdout and `--log-file`.
 2) **Metadata slice**: keep rows where `species == "Homo sapiens"` and `st_technology != "Spatial Transcriptomics"`.
 3) **Load `.h5ad` files**:
    - Drop duplicate genes per file (keep first occurrence).
    - Collect any Ensembl IDs (ENSG*).
+   - Attach metadata fields (organ, st_technology, preservation_method, pixel size, spot diameter) to `obs`.
+   - **Visium HD pooling**: if pixel size and spatial cols exist, pool 16 µm bins into **128 µm** pseudo-spots (contiguous tiling) using `pool_bins_visiumhd_fixed`.
+     - Rationale: preserves divisibility by the 16 µm base grid and matches the observed physical diameter (~124–128 µm) of released HD pseudo-spots.
+   - **Xenium**: treated as already spot-level; no pooling here (packaged h5ads already on the intended lattice with ~100 µm spacing per HEST Issue [#79](https://github.com/mahmoodlab/HEST/issues/79)).
 4) **Ensembl translation**:
    - Async lookup via mygene; translation failures log warnings.
    - Untranslated Ensembl genes are dropped during normalization.
@@ -34,27 +39,39 @@ python scripts/preprocess_hest_stomics.py \
    - If >90% of genes would be dropped, skip the split and record it as dropped.
 9) **Save processed data**:
    - Keep only non-constant genes per slide.
-   - Write each processed slide to `st_processed_<YYYYMMDD>/<id>.h5ad` with `dataset_title` reset to the base title.
-10) **Stats**:
-    - Per-spot min/max/mean across genes (describe output) per split.
+   - Write each processed slide to `processed_<YYYYMMDD>/h5ad/<id>.h5ad` with `dataset_title` reset to the base title; `spot_id` prefixed with slide id.
+10) **Patches**:
+    - If `<id>.tif` exists, extract **224×224** patches at **0.5 µm/px** (~112 µm FOV) centered on spots, resampling from source pixel size when known; save to `processed_<date>/patches/slide=<id>_images.npz` and write corresponding filtered AnnData.
+11) **Stats**:
+    - Per-gene min/q1/median/q3/max/mean across spots per split.
+    - Per-spot min/max/mean across genes per split.
     - Random slide value summary per split.
-11) **Embedding cache (in memory)**:
+    - **Sanity checks**: nearest-neighbor spacing logged per split; expects ~100 µm (Visium/Xenium) or ~128 µm (Visium HD); warns on >15% deviation.
+12) **Embeddings (persisted)**:
     - Collect unique strings from metadata: `organ`, `st_technology`, `preservation_method`, plus all surviving genes.
-    - Encode with `thomas-sounack/BioClinical-ModernBERT-base` (SentenceTransformer); log if embeddings are unique.
+    - Encode with `thomas-sounack/BioClinical-ModernBERT-base`; save `embeddings.npy`, mappings, and meta under `processed_<date>/embeddings/`.
+13) **Spots metadata**:
+    - Save `processed_<date>/spots.parquet` with one row per spot: `spot_id`, `slide_id`, `dataset_title`, `organ`, `st_technology`, `preservation_method`, spatial coords (px), `pixel_size_um`, `h5ad_file`, `patch_file`, `tif_path`.
 
 ## Outputs
-- Processed `.h5ad` files in `st_processed_<YYYYMMDD>/`.
+- Processed `.h5ad` files in `processed_<YYYYMMDD>/h5ad/`.
+- Patches in `processed_<YYYYMMDD>/patches/slide=<id>_images.npz` (+ filtered adata alongside).
+- Text embeddings in `processed_<YYYYMMDD>/embeddings/`.
+- Spot metadata in `processed_<YYYYMMDD>/spots.parquet`.
 - Logs summarizing:
   - Duplicate gene drops.
   - Ensembl translation stats.
   - Split counts per dataset.
   - Gene drops per split and surviving gene count.
   - Dropped splits (>90% genes removed).
-  - Per-spot stats and random-slide summaries.
+  - Per-gene/spot stats and random-slide summaries.
+  - NN spacing sanity checks vs expected scales.
+  - Patch resampling info (FOV, ratio).
   - Embedding build summary (count, model).
 
 ## Notes and assumptions
-- Panel grouping is order-insensitive; same genes in different order will still be grouped.
+- Panel grouping is order-insensitive; same genes in different order are grouped.
 - If mygene returns no translations, Ensembl genes are dropped and the run continues.
 - Constant-gene filtering is per-split; splits with empty panels or extreme drops are skipped.
-- Embeddings are held in memory only (not persisted). Save them if you need reuse.***
+- Visium HD pseudo-spots target 128 µm; Xenium in packaged h5ads is treated as already on its intended lattice (expected ~100 µm spacing per Issue #79); native Visium retains its ~55 µm diameter, ~100 µm spacing.
+- Patches are resampled to 0.5 µm/px (224×224); if source pixel size is unknown, no rescale is applied (assumes source ≈ target).

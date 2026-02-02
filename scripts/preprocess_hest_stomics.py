@@ -1,150 +1,40 @@
 import argparse
 import asyncio
+import json
 import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-import re
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from aiohttp import ClientSession
 from scipy import sparse
+from scipy.spatial import cKDTree
 from tqdm import tqdm
-from sentence_transformers import SentenceTransformer
 
+# ensure local imports work when running as a script
+import sys
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.append(str(CURRENT_DIR))
+from pseudo_visium_fixed import (  # type: ignore
+    pool_bins_visiumhd_fixed,
+    dump_patches_fixed,
+)
+from preprocess_helpers import (
+    setup_logging,
+    translate_ensembl_ids,
+    normalize_gene_names,
+    _gene_stats,
+    _spot_stats,
+    build_embeddings,
+    _get_pixel_size_um,
+    _get_pixel_size_from_meta,
+    ENSEMBL_RE,
+)
 
-def setup_logging(log_file: Path) -> logging.Logger:
-    """Configure root logger to log to stdout and file."""
-    logger = logging.getLogger("gene_filter")
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-
-    if not logger.handlers:
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file, mode="w")
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    return logger
-
-
-ENSEMBL_RE = re.compile(r"^ENSG[0-9]+", re.IGNORECASE)
-GRCH_PREFIX_RE = re.compile(r"^grch38_+")
-
-
-async def _fetch_symbol(session: ClientSession, gene_id: str, semaphore: asyncio.Semaphore, logger: logging.Logger):
-    url = "https://mygene.info/v3/query"
-    params = {"q": gene_id, "scopes": "ensembl.gene", "fields": "symbol", "species": "human"}
-    async with semaphore:
-        try:
-            async with session.get(url, params=params, timeout=15) as resp:
-                if resp.status != 200:
-                    logger.debug("mygene %s status %s", gene_id, resp.status)
-                    return None
-                data = await resp.json()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("mygene %s request failed: %s", gene_id, exc)
-            return None
-    hits = data.get("hits") or []
-    for hit in hits:
-        symbol = hit.get("symbol")
-        if symbol:
-            return symbol
-    return None
-
-
-async def translate_ensembl_ids(ensembl_ids, logger: logging.Logger, concurrency: int = 10):
-    """Translate Ensembl gene IDs to symbols using mygene asynchronously."""
-    translation = {}
-    semaphore = asyncio.Semaphore(concurrency)
-    connector = None
-    async with ClientSession(connector=connector) as session:
-        tasks = [
-            _fetch_symbol(session, gene_id, semaphore, logger)
-            for gene_id in ensembl_ids
-        ]
-        results = await asyncio.gather(*tasks)
-    for gene_id, symbol in zip(ensembl_ids, results):
-        if symbol:
-            translation[gene_id.upper()] = symbol
-    return translation
-
-
-def normalize_gene_names(var_names, translation_map, logger: logging.Logger):
-    """Apply gene normalization and drop untranslatable Ensembl IDs."""
-    processed = []
-    keep_idx = []
-    seen = set()
-    dropped_untranslated = 0
-    for idx, name in enumerate(var_names):
-        gene = name
-        if ENSEMBL_RE.match(gene):
-            symbol = translation_map.get(gene.upper())
-            if not symbol:
-                dropped_untranslated += 1
-                continue
-            gene = symbol
-        gene = gene.lower()
-        gene = GRCH_PREFIX_RE.sub("", gene)
-        if gene and gene not in seen:
-            seen.add(gene)
-            processed.append(gene)
-            keep_idx.append(idx)
-    if dropped_untranslated:
-        logger.info("Dropped %d Ensembl genes lacking translation", dropped_untranslated)
-    return processed, keep_idx
-
-
-def _gene_stats(X):
-    if sparse.issparse(X):
-        return (
-            np.asarray(X.sum(axis=0)).ravel(),
-            np.asarray(X.max(axis=0).todense()).ravel(),
-            np.asarray(X.min(axis=0).todense()).ravel(),
-        )
-    X = np.asarray(X)
-    return X.sum(axis=0), X.max(axis=0), X.min(axis=0)
-
-
-def _spot_stats(X):
-    if sparse.issparse(X):
-        if X.shape[0] == 0 or X.shape[1] == 0:
-            return np.array([]), np.array([]), np.array([])
-        return (
-            np.asarray(X.min(axis=1)).ravel(),
-            np.asarray(X.max(axis=1)).ravel(),
-            np.asarray(X.mean(axis=1)).ravel(),
-        )
-    X = np.asarray(X)
-    if X.size == 0 or X.shape[1] == 0:
-        return np.array([]), np.array([]), np.array([])
-    return X.min(axis=1), X.max(axis=1), X.mean(axis=1)
-
-
-def build_embeddings(texts, logger: logging.Logger):
-    """Encode texts with SentenceTransformer and ensure uniqueness."""
-    if not texts:
-        return {}, None
-    model_id = "thomas-sounack/BioClinical-ModernBERT-base"
-    logger.info("Loading embedding model: %s", model_id)
-    model = SentenceTransformer(model_id)
-    unique_texts = list(dict.fromkeys(texts))  # preserve order and dedupe
-    logger.info("Encoding %d unique texts", len(unique_texts))
-    emb = model.encode(unique_texts, batch_size=64, normalize_embeddings=True, show_progress_bar=False)
-    emb_arr = np.asarray(emb)
-    unique_rows = np.unique(emb_arr, axis=0).shape[0]
-    if unique_rows != len(unique_texts):
-        logger.warning("Embedding duplicates detected: %d unique embeddings vs %d texts", unique_rows, len(unique_texts))
-    else:
-        logger.info("All %d embeddings are unique", len(unique_texts))
-    embedding_dict = {txt: vec for txt, vec in zip(unique_texts, emb_arr)}
-    return embedding_dict, model_id
 
 
 def main():
@@ -167,14 +57,26 @@ def main():
         default=Path("/storage/hest1k/st"),
         help="Path to directory containing ST .h5ad files.",
     )
+    parser.add_argument(
+        "--tif-root",
+        type=Path,
+        default=Path("/storage/hest1k/wsis"),
+        help="Root directory where slide .tif files are stored (expected as <id>.tif). If missing, patches are skipped.",
+    )
     args = parser.parse_args()
 
     logger = setup_logging(args.log_file)
     logger.info("Starting preprocessing with metadata: %s | st_path: %s", args.metadata, args.st_path)
     meta_df = pd.read_csv(args.metadata)
 
-    processed_dir = args.st_path.parent / f"st_processed_{datetime.now():%Y%m%d}"
+    processed_dir = args.st_path.parent / f"processed_{datetime.now():%Y%m%d}"
     processed_dir.mkdir(parents=True, exist_ok=True)
+    h5ad_dir = processed_dir / "h5ad"
+    h5ad_dir.mkdir(exist_ok=True)
+    patch_dir = processed_dir / "patches"
+    patch_dir.mkdir(exist_ok=True)
+    emb_dir = processed_dir / "embeddings"
+    emb_dir.mkdir(exist_ok=True)
     logger.info("Processed .h5ad outputs will be saved to: %s", processed_dir)
 
     # slice to Homo sapiens and exclude Spatial Transcriptomics technology
@@ -183,6 +85,9 @@ def main():
     ].copy()
     if human_df.empty:
         raise ValueError("No datasets left after filtering by species/technology.")
+
+    # precompute metadata index for quick lookup
+    meta_lookup = human_df.set_index("id")
 
     # load all h5ad files, dropping duplicate genes
     dataset_payloads = {}
@@ -194,6 +99,29 @@ def main():
         adatas = []
         for sample_id in ids:
             adata = sc.read_h5ad(args.st_path / f"{sample_id}.h5ad")
+            if sample_id not in meta_lookup.index:
+                logger.warning("%s: missing metadata row; skipping", sample_id)
+                skip_records["missing_meta"].append(sample_id)
+                continue
+            meta_row = meta_lookup.loc[sample_id]
+            st_tech = str(meta_row.get("st_technology", ""))
+            # Pseudo-Visium pooling for Visium HD when possible
+            if "visium hd" in st_tech.lower():
+                pixel_size = _get_pixel_size_um(adata) or _get_pixel_size_from_meta(meta_row)
+                if pixel_size is None:
+                    logger.warning("%s: Visium HD pooling skipped (missing pixel size)", sample_id)
+                    skip_records["hd_no_pixel"].append(sample_id)
+                elif not {"pxl_row_in_fullres", "pxl_col_in_fullres"}.issubset(adata.obs.columns):
+                    logger.warning("%s: Visium HD pooling skipped (missing spatial columns)", sample_id)
+                    skip_records["hd_no_spatial"].append(sample_id)
+                else:
+                    logger.info("%s: pooling Visium HD to pseudo-Visium (target 128um)", sample_id)
+                    expected_px = 128 / pixel_size
+                    logger.info("%s: target spot diameter ~%.2f px at pixel size %.4f um/px", sample_id, expected_px, pixel_size)
+                    adata = pool_bins_visiumhd_fixed(adata, pixel_size=pixel_size, dst_bin_size_um=128)
+            elif "xenium" in st_tech.lower():
+                # HEST Xenium h5ad is already spot-level with spatial coords; no pooling needed
+                logger.info("%s: Xenium detected; using provided spots (no pooling)", sample_id)
             dup_mask = adata.var_names.duplicated()
             dup_count = int(dup_mask.sum())
             if dup_count:
@@ -203,6 +131,11 @@ def main():
             ensembl_candidates.update([g for g in adata.var_names if ENSEMBL_RE.match(g)])
             adata.obs["dataset_title"] = dataset_title
             adata.obs["sample_id"] = sample_id
+            adata.obs["st_technology"] = meta_row.get("st_technology")
+            adata.obs["organ"] = meta_row.get("organ")
+            adata.obs["preservation_method"] = meta_row.get("preservation_method")
+            adata.obs["pixel_size_um_meta"] = _get_pixel_size_from_meta(meta_row)
+            adata.obs["spot_diameter_meta"] = meta_row.get("spot_diameter")
             adatas.append(adata)
         dataset_payloads[dataset_title] = {"ids": ids, "adatas": adatas}
 
@@ -224,7 +157,8 @@ def main():
     dropped_datasets = []
     split_report = {}
     surviving_genes = set()
-
+    spots_records = []
+    skip_records = {"missing_meta": [], "hd_no_pixel": [], "hd_no_spatial": [], "no_tif": [], "patch_fail": []}
     # normalize gene names and drop untranslated Ensembl genes
     for dataset_title, payload in dataset_payloads.items():
         processed_adatas = []
@@ -297,9 +231,75 @@ def main():
             for adata_proc, sid in zip(adatas_common, split_ids):
                 filtered_adata = adata_proc[:, keep_mask].copy()
                 filtered_adata.obs["dataset_title"] = dataset_title
-                out_path = processed_dir / f"{sid}.h5ad"
+                meta_row = meta_lookup.loc[sid]
+                filtered_adata.obs["st_technology"] = meta_row.get("st_technology")
+                filtered_adata.obs["organ"] = meta_row.get("organ")
+                filtered_adata.obs["preservation_method"] = meta_row.get("preservation_method")
+                spot_ids = [f"{sid}__{obs}" for obs in filtered_adata.obs_names]
+                filtered_adata.obs["spot_id"] = spot_ids
+                filtered_adata.obs_names = spot_ids
+                out_path = h5ad_dir / f"{sid}.h5ad"
                 filtered_adata.write(out_path)
                 logger.info("%s: saved processed h5ad -> %s (genes kept: %d)", sid, out_path, filtered_adata.n_vars)
+
+                # Patch extraction if tif exists
+                tif_path = None
+                for ext in [".tif", ".tiff"]:
+                    candidate = args.tif_root / f"{sid}{ext}"
+                    if candidate.exists():
+                        tif_path = candidate
+                        break
+                patch_path = None
+                if tif_path is not None and filtered_adata.shape[0] > 0:
+                    # prefer uns pixel size; fallback to metadata column (positional access to avoid FutureWarning)
+                    pixel_size_meta = None
+                    if "pixel_size_um_meta" in filtered_adata.obs:
+                        try:
+                            pixel_size_meta = filtered_adata.obs["pixel_size_um_meta"].iloc[0]
+                        except Exception:
+                            pixel_size_meta = None
+                    pixel_size = _get_pixel_size_um(filtered_adata) or pixel_size_meta
+                    if pixel_size is not None:
+                        filtered_adata.uns["pixel_size"] = pixel_size
+                        patch_fov_um = 224 * 0.5  # target_patch_size * target_pixel_size
+                        resample_ratio = 0.5 / float(pixel_size)
+                        logger.info(
+                            "%s: patch FOV %.1f um @ target_pixel_size=0.5; resample ratio from src %.3f",
+                            sid,
+                            patch_fov_um,
+                            resample_ratio,
+                        )
+                    patch_path = patch_dir / f"slide={sid}_images.npz"
+                    try:
+                        dump_patches_fixed(filtered_adata, tif_path, patch_path.parent, name=f"slide={sid}")
+                        logger.info("%s: saved patches -> %s", sid, patch_path)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("%s: failed to dump patches (%s)", sid, exc)
+                        patch_path = None
+                        skip_records["patch_fail"].append(sid)
+                else:
+                    if tif_path is None:
+                        skip_records["no_tif"].append(sid)
+
+                # Record spots metadata
+                pixel_size_um = _get_pixel_size_um(filtered_adata)
+                for idx, spot in filtered_adata.obs.iterrows():
+                    spots_records.append(
+                        {
+                            "spot_id": idx,
+                            "slide_id": sid,
+                            "dataset_title": dataset_title,
+                            "organ": spot.get("organ"),
+                            "st_technology": spot.get("st_technology"),
+                            "preservation_method": spot.get("preservation_method"),
+                            "pixel_x": float(filtered_adata.obsm["spatial"][filtered_adata.obs_names.get_loc(idx)][0]),
+                            "pixel_y": float(filtered_adata.obsm["spatial"][filtered_adata.obs_names.get_loc(idx)][1]),
+                            "patch_file": str(patch_path) if patch_path else None,
+                            "h5ad_file": str(out_path),
+                            "pixel_size_um": pixel_size_um,
+                            "tif_path": str(tif_path) if tif_path else None,
+                        }
+                    )
                 filtered_adatas.append(filtered_adata)
 
             concat_filtered = ad.concat(filtered_adatas, join="inner", keys=split_ids, label="sample_id")
@@ -362,6 +362,54 @@ def main():
             value_summaries[split_title] = {"sample_id": rand_id, "summary": summary}
             logger.info("%s: random tissue %s value summary %s", split_title, rand_id, summary)
 
+            # sanity checks: nearest-neighbor spacing
+            try:
+                coords = np.asarray(concat_filtered.obsm["spatial"])
+                if coords.shape[0] > 1:
+                    tree = cKDTree(coords)
+                    dists_px, _ = tree.query(coords, k=2)
+                    nn_px = dists_px[:, 1]
+                    pixel_size_um = _get_pixel_size_um(concat_filtered) or filtered_adata.obs.get("pixel_size_um_meta", [None])[0]
+                    if pixel_size_um:
+                        nn_um = nn_px * float(pixel_size_um)
+                        median_um = float(np.median(nn_um))
+                        median_px = float(np.median(nn_px))
+                        expected = None
+                        if "xenium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
+                            expected = 100.0
+                        elif "visium hd" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
+                            expected = 128.0
+                        elif "visium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
+                            expected = 100.0  # center-to-center
+                        if expected:
+                            if abs(median_um - expected) / expected > 0.15:
+                                logger.warning(
+                                    "%s: NN spacing median %.2f um deviates from expected %.1f um (median px=%.2f)",
+                                    split_title,
+                                    median_um,
+                                    expected,
+                                    median_px,
+                                )
+                            else:
+                                logger.info(
+                                    "%s: NN spacing median=%.2f um (expected ~%.1f, px median=%.2f)",
+                                    split_title,
+                                    median_um,
+                                    expected,
+                                    median_px,
+                                )
+                        else:
+                            logger.info(
+                                "%s: NN spacing median=%.2f um (pixels median=%.2f)",
+                                split_title,
+                                median_um,
+                                median_px,
+                            )
+                    else:
+                        logger.info("%s: NN spacing median=%.2f px (pixel size unknown)", split_title, float(np.median(nn_px)))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("%s: NN spacing check failed (%s)", split_title, exc)
+
     # Build embeddings for organs, st technology, tissue prep methods, and surviving genes (the ones that remain after filtering)
     def _collect_unique(df: pd.DataFrame, cols):
         values = []
@@ -375,11 +423,41 @@ def main():
     prep_texts = _collect_unique(human_df, ["preservation_method"])
     gene_texts = sorted(surviving_genes)
     embedding_inputs = organ_texts + tech_texts + prep_texts + gene_texts
-    embeddings_dict, model_used = build_embeddings(embedding_inputs, logger)
+    embeddings_dict, model_used, embedding_texts = build_embeddings(embedding_inputs, logger)
     if embeddings_dict:
         logger.info("Built embeddings for %d texts using model %s", len(embeddings_dict), model_used)
+        emb_matrix = np.stack([embeddings_dict[t] for t in embedding_texts])
+        np.save(emb_dir / "embeddings.npy", emb_matrix)
+        with open(emb_dir / "key_to_index.json", "w", encoding="utf-8") as f:
+            json.dump({t: i for i, t in enumerate(embedding_texts)}, f)
+        with open(emb_dir / "index_to_text.json", "w", encoding="utf-8") as f:
+            json.dump({str(i): t for i, t in enumerate(embedding_texts)}, f)
+        with open(emb_dir / "meta.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "model_id": model_used,
+                    "normalize": True,
+                    "num_texts": len(embedding_texts),
+                    "dtype": str(emb_matrix.dtype),
+                },
+                f,
+                indent=2,
+            )
     else:
         logger.info("No embeddings built (no texts).")
+
+    if spots_records:
+        spots_df = pd.DataFrame(spots_records)
+        spots_df.to_parquet(processed_dir / "spots.parquet", index=False)
+        logger.info("Saved spots metadata -> %s", processed_dir / "spots.parquet")
+
+    # log skipped items summary
+    sep = "-" * 80
+    logger.info(sep)
+    logger.info("Skip summary:")
+    for key, vals in skip_records.items():
+        logger.info(" - %s: %d", key, len(vals))
+    logger.info(sep)
 
     # final report of dropped datasets/splits and gene drops
     sep = "-" * 80
