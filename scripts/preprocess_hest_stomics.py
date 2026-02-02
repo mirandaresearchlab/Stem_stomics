@@ -33,6 +33,9 @@ from preprocess_helpers import (
     _get_pixel_size_um,
     _get_pixel_size_from_meta,
     ENSEMBL_RE,
+    VISIUM_HD_POOL_FACTOR,
+    VISIUM_HD_DST_BIN_UM,
+    XENIUM_SPOT_UM,
 )
 
 
@@ -48,7 +51,7 @@ def main():
     parser.add_argument(
         "--metadata",
         type=Path,
-        default=Path("/storage/hest1k/HEST_v1_1_0.csv"),
+        default=Path("/storage/hest1k/HEST_v1_2_1.csv"),
         help="Path to metadata CSV.",
     )
     parser.add_argument(
@@ -100,13 +103,14 @@ def main():
         for sample_id in ids:
             adata = sc.read_h5ad(args.st_path / f"{sample_id}.h5ad")
             if sample_id not in meta_lookup.index:
-                logger.warning("%s: missing metadata row; skipping", sample_id)
+                logger.warning("%s: missing metadata row; skipping", sample_id)  # note to self: check in the logs if this ever happens
                 skip_records["missing_meta"].append(sample_id)
                 continue
             meta_row = meta_lookup.loc[sample_id]
             st_tech = str(meta_row.get("st_technology", ""))
             # Pseudo-Visium pooling for Visium HD when possible
             if "visium hd" in st_tech.lower():
+                adata.obs["spot_size_um"] = VISIUM_HD_DST_BIN_UM
                 pixel_size = _get_pixel_size_um(adata) or _get_pixel_size_from_meta(meta_row)
                 if pixel_size is None:
                     logger.warning("%s: Visium HD pooling skipped (missing pixel size)", sample_id)
@@ -115,13 +119,20 @@ def main():
                     logger.warning("%s: Visium HD pooling skipped (missing spatial columns)", sample_id)
                     skip_records["hd_no_spatial"].append(sample_id)
                 else:
-                    logger.info("%s: pooling Visium HD to pseudo-Visium (target 128um)", sample_id)
-                    expected_px = 128 / pixel_size
+                    logger.info(
+                        "%s: pooling Visium HD to pseudo-Visium (target %dum = %dx16um)",
+                        sample_id,
+                        VISIUM_HD_DST_BIN_UM,
+                        VISIUM_HD_POOL_FACTOR,
+                    )
+                    expected_px = VISIUM_HD_DST_BIN_UM / pixel_size
                     logger.info("%s: target spot diameter ~%.2f px at pixel size %.4f um/px", sample_id, expected_px, pixel_size)
-                    adata = pool_bins_visiumhd_fixed(adata, pixel_size=pixel_size, dst_bin_size_um=128)
+                    adata = pool_bins_visiumhd_fixed(adata, pixel_size=pixel_size, dst_bin_size_um=VISIUM_HD_DST_BIN_UM)
+                    adata.obs["spot_size_um"] = VISIUM_HD_DST_BIN_UM
             elif "xenium" in st_tech.lower():
                 # HEST Xenium h5ad is already spot-level with spatial coords; no pooling needed
                 logger.info("%s: Xenium detected; using provided spots (no pooling)", sample_id)
+                adata.obs["spot_size_um"] = XENIUM_SPOT_UM
             dup_mask = adata.var_names.duplicated()
             dup_count = int(dup_mask.sum())
             if dup_count:
@@ -376,9 +387,9 @@ def main():
                         median_px = float(np.median(nn_px))
                         expected = None
                         if "xenium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
-                            expected = 100.0
+                            expected = XENIUM_SPOT_UM
                         elif "visium hd" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
-                            expected = 128.0
+                            expected = VISIUM_HD_DST_BIN_UM
                         elif "visium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
                             expected = 100.0  # center-to-center
                         if expected:

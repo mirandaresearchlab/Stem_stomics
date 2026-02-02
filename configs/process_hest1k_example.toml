@@ -42,8 +42,8 @@ save_path = "/storage/hest1k"
 [ids_query]
 # csv_path can be a local path. If omitted, script will try to load the metadata CSV
 # from HuggingFace at:
-# https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_1_0.csv
-csv_path = "/storage/hest1k/metadata/HEST_v1_1_0.csv"
+# https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_2_1.csv
+csv_path = "/storage/hest1k/metadata/HEST_v1_2_1.csv"
 column = "dataset_title"
 method = "startswith"
 pattern = "Spatial localization with Spatial Transcriptomics for an atlas of healthy and injured cell states"

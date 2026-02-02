@@ -133,7 +133,7 @@ def _resolve_ids(cfg: PreprocessConfig, logger: logging.Logger) -> List[str]:
             logger.info(f"Loading metadata CSV from: {q.csv_path}")
             meta_df = pd.read_csv(q.csv_path)
         else:
-            hf_url = "https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_1_0.csv"
+            hf_url = "https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_2_1.csv"
             logger.info(f"Loading metadata CSV from HuggingFace: {hf_url}")
             try:
                 meta_df = pd.read_csv(hf_url)

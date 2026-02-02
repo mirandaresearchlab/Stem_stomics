@@ -4,7 +4,7 @@ This script normalizes gene names, groups samples by gene panel, filters genes, 
 
 ```
 python scripts/preprocess_hest_stomics.py \
-  --metadata /storage/hest1k/HEST_v1_1_0.csv \
+  --metadata /storage/hest1k/HEST_v1_2_1.csv \
   --st-path /storage/hest1k/st \
   --log-file logs/preprocess_hest_stomics.log
 ```
@@ -21,9 +21,9 @@ python scripts/preprocess_hest_stomics.py \
    - Drop duplicate genes per file (keep first occurrence).
    - Collect any Ensembl IDs (ENSG*).
    - Attach metadata fields (organ, st_technology, preservation_method, pixel size, spot diameter) to `obs`.
-   - **Visium HD pooling**: if pixel size and spatial cols exist, pool 16 µm bins into **128 µm** pseudo-spots (contiguous tiling) using `pool_bins_visiumhd_fixed`.
-     - Rationale: preserves divisibility by the 16 µm base grid and matches the observed physical diameter (~124–128 µm) of released HD pseudo-spots.
-   - **Xenium**: treated as already spot-level; no pooling here (packaged h5ads already on the intended lattice with ~100 µm spacing per HEST Issue [#79](https://github.com/mahmoodlab/HEST/issues/79)).
+   - **Visium HD pooling**: if pixel size and spatial cols exist, pool 16 µm bins into **96 µm** pseudo-spots (6×16 µm; contiguous tiling) using `pool_bins_visiumhd_fixed`.
+     - Rationale: preserves divisibility by the 16 µm base grid while targeting the default 96 µm pseudo-spot size.
+   - **Xenium**: treated as already spot-level; no pooling here (packaged h5ads already on the intended lattice with ~100 µm spacing per HEST Issue [#79](https://github.com/mahmoodlab/HEST/issues/79)). `spot_size_um` is set to 100 µm.
 4) **Ensembl translation**:
    - Async lookup via mygene; translation failures log warnings.
    - Untranslated Ensembl genes are dropped during normalization.
@@ -46,7 +46,7 @@ python scripts/preprocess_hest_stomics.py \
     - Per-gene min/q1/median/q3/max/mean across spots per split.
     - Per-spot min/max/mean across genes per split.
     - Random slide value summary per split.
-    - **Sanity checks**: nearest-neighbor spacing logged per split; expects ~100 µm (Visium/Xenium) or ~128 µm (Visium HD); warns on >15% deviation.
+    - **Sanity checks**: nearest-neighbor spacing logged per split; expects ~100 µm (Visium/Xenium) or ~96 µm (Visium HD); warns on >15% deviation.
 12) **Embeddings (persisted)**:
     - Collect unique strings from metadata: `organ`, `st_technology`, `preservation_method`, plus all surviving genes.
     - Encode with `thomas-sounack/BioClinical-ModernBERT-base`; save `embeddings.npy`, mappings, and meta under `processed_<date>/embeddings/`.
@@ -58,6 +58,7 @@ python scripts/preprocess_hest_stomics.py \
 - Patches in `processed_<YYYYMMDD>/patches/slide=<id>_images.npz` (+ filtered adata alongside).
 - Text embeddings in `processed_<YYYYMMDD>/embeddings/`.
 - Spot metadata in `processed_<YYYYMMDD>/spots.parquet`.
+- Processed AnnData includes `spot_size_um` for Visium HD (96 µm default) and Xenium (100 µm default).
 - Logs summarizing:
   - Duplicate gene drops.
   - Ensembl translation stats.
@@ -73,5 +74,5 @@ python scripts/preprocess_hest_stomics.py \
 - Panel grouping is order-insensitive; same genes in different order are grouped.
 - If mygene returns no translations, Ensembl genes are dropped and the run continues.
 - Constant-gene filtering is per-split; splits with empty panels or extreme drops are skipped.
-- Visium HD pseudo-spots target 128 µm; Xenium in packaged h5ads is treated as already on its intended lattice (expected ~100 µm spacing per Issue #79); native Visium retains its ~55 µm diameter, ~100 µm spacing.
+- Visium HD pseudo-spots target 96 µm; Xenium in packaged h5ads is treated as already on its intended lattice (expected ~100 µm spacing per Issue #79); native Visium retains its ~55 µm diameter, ~100 µm spacing.
 - Patches are resampled to 0.5 µm/px (224×224); if source pixel size is unknown, no rescale is applied (assumes source ≈ target).

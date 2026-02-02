@@ -17,7 +17,7 @@ from PIL import Image
 def pool_bins_visiumhd_fixed(
     adata: sc.AnnData,
     pixel_size: float,
-    dst_bin_size_um: int = 128,
+    dst_bin_size_um: int = 96,
     src_bin_size_um: Literal[2, 8, 16] = 16,
     chunk_len: int = 50_000,
 ) -> sc.AnnData:

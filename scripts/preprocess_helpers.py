@@ -21,6 +21,9 @@ from sentence_transformers import SentenceTransformer
 
 ENSEMBL_RE = re.compile(r"^ENSG[0-9]+", re.IGNORECASE)
 GRCH_PREFIX_RE = re.compile(r"^grch38_+")
+VISIUM_HD_POOL_FACTOR = 6
+VISIUM_HD_DST_BIN_UM = 96
+XENIUM_SPOT_UM = 100.0
 
 
 def setup_logging(log_file: Path) -> logging.Logger:
@@ -177,9 +180,9 @@ def nn_spacing_check(adata: ad.AnnData, pixel_size_um: float, st_tech: str, logg
         expected = None
         st_lower = st_tech.lower() if isinstance(st_tech, str) else ""
         if "xenium" in st_lower:
-            expected = 100.0
+            expected = XENIUM_SPOT_UM
         elif "visium hd" in st_lower:
-            expected = 128.0
+            expected = VISIUM_HD_DST_BIN_UM
         elif "visium" in st_lower:
             expected = 100.0  # center-to-center
         if expected:
