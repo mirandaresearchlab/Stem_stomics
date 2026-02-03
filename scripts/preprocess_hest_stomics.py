@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import json
-import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -27,8 +26,7 @@ from preprocess_helpers import (
     setup_logging,
     translate_ensembl_ids,
     normalize_gene_names,
-    _gene_stats,
-    _spot_stats,
+    _axis_stats,
     build_embeddings,
     _get_pixel_size_um,
     _get_pixel_size_from_meta,
@@ -88,6 +86,9 @@ def main():
     ].copy()
     if human_df.empty:
         raise ValueError("No datasets left after filtering by species/technology.")
+    if "organ" in human_df.columns:
+        organ_counts = human_df["organ"].value_counts(dropna=False)
+        logger.info("Datasets per organ after filtering:\n%s", organ_counts.to_string())
 
     # precompute metadata index for quick lookup
     meta_lookup = human_df.set_index("id")
@@ -107,6 +108,15 @@ def main():
                 skip_records["missing_meta"].append(sample_id)
                 continue
             meta_row = meta_lookup.loc[sample_id]
+            estimated_px = None
+            if "pixel_size_um_estimated" in adata.uns and adata.uns["pixel_size_um_estimated"] is not None:
+                estimated_px = adata.uns["pixel_size_um_estimated"]
+            elif "pixel_size_um_estimated" in meta_row and pd.notna(meta_row["pixel_size_um_estimated"]):
+                estimated_px = meta_row["pixel_size_um_estimated"]
+            if estimated_px is None:
+                raise ValueError(f"{sample_id}: missing pixel_size_um_estimated in adata.uns and metadata")
+            if "pixel_size_um_estimated" not in adata.uns or adata.uns["pixel_size_um_estimated"] is None:
+                adata.uns["pixel_size_um_estimated"] = estimated_px
             st_tech = str(meta_row.get("st_technology", ""))
             # Pseudo-Visium pooling for Visium HD when possible
             if "visium hd" in st_tech.lower():
@@ -202,21 +212,21 @@ def main():
 
             common_genes = list(panel_key)  # identical by construction
             if not common_genes:
-                logger.info("%s: empty gene panel -> dropping split", split_title)
+                logger.info("%s: empty gene panel -> dropping split", split_title)  # check if this ever happens
                 dropped_datasets.append((split_title, 100.0))
                 continue
 
             adatas_common = [a[:, common_genes].copy() for a in split_adatas]
             concat = ad.concat(adatas_common, join="inner", keys=split_ids, label="sample_id")
 
-            sums, maxs, mins = _gene_stats(concat.X)
-            constant_mask = (maxs - mins) == 0
+            gene_stats = _axis_stats(concat.X, axis=0, stats=("min", "max", "mean"))
+            constant_mask = (gene_stats["max"] - gene_stats["min"]) == 0
             genes_to_drop = concat.var_names[constant_mask].tolist()
 
             filtered_genes[split_title] = genes_to_drop
             drop_pct = 100 * len(genes_to_drop) / len(concat.var_names) if len(concat.var_names) else 0
             logger.info(
-                "%s: drop %d genes (%d constant, %.1f%%) -> %s (max 5 shown)",
+                "%s: drop %d genes (%d constant, %.1f%%) -> %s ... (max 5 shown)",
                 split_title,
                 len(genes_to_drop),
                 int(constant_mask.sum()),
@@ -225,6 +235,7 @@ def main():
             )
 
             if drop_pct > 90:
+                # check if this ever happens
                 logger.info("%s: dropping split because %.1f%% of genes would be removed", split_title, drop_pct)
                 dropped_datasets.append((split_title, drop_pct))
                 continue
@@ -243,9 +254,6 @@ def main():
                 filtered_adata = adata_proc[:, keep_mask].copy()
                 filtered_adata.obs["dataset_title"] = dataset_title
                 meta_row = meta_lookup.loc[sid]
-                filtered_adata.obs["st_technology"] = meta_row.get("st_technology")
-                filtered_adata.obs["organ"] = meta_row.get("organ")
-                filtered_adata.obs["preservation_method"] = meta_row.get("preservation_method")
                 spot_ids = [f"{sid}__{obs}" for obs in filtered_adata.obs_names]
                 filtered_adata.obs["spot_id"] = spot_ids
                 filtered_adata.obs_names = spot_ids
@@ -281,13 +289,15 @@ def main():
                             resample_ratio,
                         )
                     patch_path = patch_dir / f"slide={sid}_images.npz"
-                    try:
-                        dump_patches_fixed(filtered_adata, tif_path, patch_path.parent, name=f"slide={sid}")
-                        logger.info("%s: saved patches -> %s", sid, patch_path)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("%s: failed to dump patches (%s)", sid, exc)
-                        patch_path = None
-                        skip_records["patch_fail"].append(sid)
+                    oob_log_path = processed_dir / "patch_oob.log"
+                    dump_patches_fixed(
+                        filtered_adata,
+                        tif_path,
+                        patch_path.parent,
+                        name=f"slide={sid}",
+                        oob_log_path=oob_log_path,
+                    )
+                    logger.info("%s: saved patches -> %s", sid, patch_path)
                 else:
                     if tif_path is None:
                         skip_records["no_tif"].append(sid)
@@ -316,21 +326,19 @@ def main():
             concat_filtered = ad.concat(filtered_adatas, join="inner", keys=split_ids, label="sample_id")
 
             # per-gene stats (min/q1/median/q3/max/mean across spots)
-            vals = concat_filtered.X.toarray() if sparse.issparse(concat_filtered.X) else np.asarray(concat_filtered.X)
-            gene_min = vals.min(axis=0)
-            gene_max = vals.max(axis=0)
-            gene_mean = vals.mean(axis=0)
-            gene_q1 = np.percentile(vals, 25, axis=0)
-            gene_median = np.percentile(vals, 50, axis=0)
-            gene_q3 = np.percentile(vals, 75, axis=0)
+            gene_stats = _axis_stats(
+                concat_filtered.X,
+                axis=0,
+                stats=("min", "max", "mean", "q1", "median", "q3"),
+            )
             gene_stats_df = pd.DataFrame(
                 {
-                    "gene_min": gene_min,
-                    "gene_q1": gene_q1,
-                    "gene_median": gene_median,
-                    "gene_q3": gene_q3,
-                    "gene_max": gene_max,
-                    "gene_mean": gene_mean,
+                    "gene_min": gene_stats["min"],
+                    "gene_q1": gene_stats["q1"],
+                    "gene_median": gene_stats["median"],
+                    "gene_q3": gene_stats["q3"],
+                    "gene_max": gene_stats["max"],
+                    "gene_mean": gene_stats["mean"],
                 },
                 index=concat_filtered.var_names,
             )
@@ -341,14 +349,18 @@ def main():
             )
 
             # per-spot stats (min/max/mean across genes)
-            spot_min, spot_max, spot_mean = _spot_stats(concat_filtered.X)
-            if spot_min.size == 0:
+            spot_stats = _axis_stats(concat_filtered.X, axis=1, stats=("min", "max", "mean"))
+            if spot_stats["min"].size == 0:
                 logger.info("%s: no genes left after filtering; skipping stats", split_title)
                 dropped_datasets.append((split_title, 100.0))
                 continue
 
             spot_stats_df = pd.DataFrame(
-                {"spot_min": spot_min, "spot_max": spot_max, "spot_mean": spot_mean},
+                {
+                    "spot_min": spot_stats["min"],
+                    "spot_max": spot_stats["max"],
+                    "spot_mean": spot_stats["mean"],
+                },
                 index=concat_filtered.obs_names,
             )
             logger.info(
@@ -373,53 +385,58 @@ def main():
             value_summaries[split_title] = {"sample_id": rand_id, "summary": summary}
             logger.info("%s: random tissue %s value summary %s", split_title, rand_id, summary)
 
-            # sanity checks: nearest-neighbor spacing
-            try:
-                coords = np.asarray(concat_filtered.obsm["spatial"])
-                if coords.shape[0] > 1:
+            # sanity checks: nearest-neighbor spacing (per slide)
+            for sid, slide_adata in zip(split_ids, filtered_adatas):
+                pixel_size_um = _get_pixel_size_um(slide_adata)
+                if pixel_size_um is None:
+                    raise ValueError(f"{sid}: missing pixel_size_um_estimated for NN spacing check")
+                try:
+                    coords = np.asarray(slide_adata.obsm["spatial"])
+                    if coords.shape[0] < 2:
+                        continue
                     tree = cKDTree(coords)
                     dists_px, _ = tree.query(coords, k=2)
                     nn_px = dists_px[:, 1]
-                    pixel_size_um = _get_pixel_size_um(concat_filtered) or filtered_adata.obs.get("pixel_size_um_meta", [None])[0]
-                    if pixel_size_um:
-                        nn_um = nn_px * float(pixel_size_um)
-                        median_um = float(np.median(nn_um))
-                        median_px = float(np.median(nn_px))
-                        expected = None
-                        if "xenium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
-                            expected = XENIUM_SPOT_UM
-                        elif "visium hd" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
-                            expected = VISIUM_HD_DST_BIN_UM
-                        elif "visium" in str(filtered_adata.obs["st_technology"].iloc[0]).lower():
-                            expected = 100.0  # center-to-center
-                        if expected:
-                            if abs(median_um - expected) / expected > 0.15:
-                                logger.warning(
-                                    "%s: NN spacing median %.2f um deviates from expected %.1f um (median px=%.2f)",
-                                    split_title,
-                                    median_um,
-                                    expected,
-                                    median_px,
-                                )
-                            else:
-                                logger.info(
-                                    "%s: NN spacing median=%.2f um (expected ~%.1f, px median=%.2f)",
-                                    split_title,
-                                    median_um,
-                                    expected,
-                                    median_px,
-                                )
+                    nn_um = nn_px * float(pixel_size_um)
+                    median_um = float(np.median(nn_um))
+                    median_px = float(np.median(nn_px))
+                    st_tech = str(slide_adata.obs["st_technology"].iloc[0]).lower()
+                    expected = None
+                    if "xenium" in st_tech:
+                        expected = XENIUM_SPOT_UM
+                    elif "visium hd" in st_tech:
+                        expected = VISIUM_HD_DST_BIN_UM
+                    elif "visium" in st_tech:
+                        expected = 100.0  # center-to-center
+                    if expected:
+                        if abs(median_um - expected) / expected > 0.15:
+                            logger.warning(
+                                "%s (%s): NN spacing median %.2f um deviates from expected %.1f um (median px=%.2f)",
+                                split_title,
+                                sid,
+                                median_um,
+                                expected,
+                                median_px,
+                            )
                         else:
                             logger.info(
-                                "%s: NN spacing median=%.2f um (pixels median=%.2f)",
+                                "%s (%s): NN spacing median=%.2f um (expected ~%.1f, px median=%.2f)",
                                 split_title,
+                                sid,
                                 median_um,
+                                expected,
                                 median_px,
                             )
                     else:
-                        logger.info("%s: NN spacing median=%.2f px (pixel size unknown)", split_title, float(np.median(nn_px)))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("%s: NN spacing check failed (%s)", split_title, exc)
+                        logger.info(
+                            "%s (%s): NN spacing median=%.2f um (pixels median=%.2f)",
+                            split_title,
+                            sid,
+                            median_um,
+                            median_px,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("%s (%s): NN spacing check failed (%s)", split_title, sid, exc)
 
     # Build embeddings for organs, st technology, tissue prep methods, and surviving genes (the ones that remain after filtering)
     def _collect_unique(df: pd.DataFrame, cols):

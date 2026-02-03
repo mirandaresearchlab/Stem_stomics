@@ -106,30 +106,19 @@ def normalize_gene_names(var_names, translation_map, logger: logging.Logger) -> 
     return processed, keep_idx
 
 
-def _gene_stats(X):
-    if sparse.issparse(X):
-        return (
-            np.asarray(X.sum(axis=0)).ravel(),
-            np.asarray(X.max(axis=0).todense()).ravel(),
-            np.asarray(X.min(axis=0).todense()).ravel(),
-        )
-    X = np.asarray(X)
-    return X.sum(axis=0), X.max(axis=0), X.min(axis=0)
-
-
-def _spot_stats(X):
-    if sparse.issparse(X):
-        if X.shape[0] == 0 or X.shape[1] == 0:
-            return np.array([]), np.array([]), np.array([])
-        return (
-            np.asarray(X.min(axis=1)).ravel(),
-            np.asarray(X.max(axis=1)).ravel(),
-            np.asarray(X.mean(axis=1)).ravel(),
-        )
-    X = np.asarray(X)
-    if X.size == 0 or X.shape[1] == 0:
-        return np.array([]), np.array([])
-    return X.min(axis=1), X.max(axis=1), X.mean(axis=1)
+def _axis_stats(X, axis: int, stats=("min", "max", "mean")):
+    X = X.toarray() if sparse.issparse(X) else np.asarray(X)
+    if X.size == 0 or X.shape[axis] == 0:
+        return {stat: np.array([]) for stat in stats}
+    fns = {
+        "min": lambda A: A.min(axis=axis),
+        "max": lambda A: A.max(axis=axis),
+        "mean": lambda A: A.mean(axis=axis),
+        "q1": lambda A: np.percentile(A, 25, axis=axis),
+        "median": lambda A: np.percentile(A, 50, axis=axis),
+        "q3": lambda A: np.percentile(A, 75, axis=axis),
+    }
+    return {stat: fns[stat](X) for stat in stats}
 
 
 def build_embeddings(texts, logger: logging.Logger):
@@ -153,7 +142,8 @@ def build_embeddings(texts, logger: logging.Logger):
 
 
 def _get_pixel_size_um(adata: ad.AnnData):
-    for key in ["pixel_size", "pixel_size_um_estimated", "pixel_size_um_embedded"]:
+    # Prefer estimated pixel size per HEST issue 106 comment (more reliable than legacy pixel_size).
+    for key in ["pixel_size_um_estimated", "pixel_size_um_embedded", "pixel_size"]:
         if key in adata.uns:
             return adata.uns[key]
     return None

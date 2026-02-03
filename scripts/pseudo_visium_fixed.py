@@ -1,11 +1,11 @@
 # NOTE: This code is adapted from https://github.com/mahmoodlab/HEST (HEST/src/hest/readers.py, HEST/src/hest/HESTData.py).
 # Changes vs upstream: (1) use safe dtypes (int64) to avoid uint16 overflow when pooling; (2) handle sparse inputs explicitly;
-# (3) filter zero-count bins consistently; (4) pad grid extents and clip indices to avoid edge drops; (5) optional patch dumping
+# (3) filter zero-count bins consistently; (4) optional patch dumping
 # filters AnnData alongside coordinates so the counts and patches stay aligned.
 
 import math
 from pathlib import Path
-from typing import Literal, Union, Optional, Sequence
+from typing import Literal, Union, Optional
 
 import numpy as np
 import pandas as pd
@@ -26,7 +26,6 @@ def pool_bins_visiumhd_fixed(
     Fixes vs upstream:
     - Accepts sparse X by densifying per chunk.
     - Accumulates in int64 to avoid overflow.
-    - Pads grid extents and clips indices to avoid dropping edge bins.
     - Filters zero-count bins before returning.
     """
     if src_bin_size_um >= dst_bin_size_um:
@@ -42,9 +41,8 @@ def pool_bins_visiumhd_fixed(
     dst_bin_pxl_size = dst_bin_size_um / pixel_size
     src_bin_pxl_size = src_bin_size_um / pixel_size
 
-    # pad by one dst bin to avoid edge drop
-    grid_height_pxl = (y_max - y_min) + dst_bin_pxl_size
-    grid_width_pxl = (x_max - x_min) + dst_bin_pxl_size
+    grid_height_pxl = (y_max - y_min) + src_bin_pxl_size
+    grid_width_pxl = (x_max - x_min) + src_bin_pxl_size
 
     m = math.ceil(grid_height_pxl / dst_bin_pxl_size)
     n = math.ceil(grid_width_pxl / dst_bin_pxl_size)
@@ -54,17 +52,19 @@ def pool_bins_visiumhd_fixed(
 
     a = np.floor((adata.obs["pxl_col_in_fullres"] - x_min + src_bin_pxl_size / 2) / dst_bin_pxl_size).astype(int)
     b = np.floor((adata.obs["pxl_row_in_fullres"] - y_min + src_bin_pxl_size / 2) / dst_bin_pxl_size).astype(int)
-    # clip to grid
-    a = np.clip(a, 0, n - 1)
-    b = np.clip(b, 0, m - 1)
+    # drop bins that would fall outside the grid (edge bins)
+    valid_mask = (a >= 0) & (a < n) & (b >= 0) & (b < m)
+    a = a[valid_mask]
+    b = b[valid_mask]
     c = (b * n + a).to_numpy()
 
-    nb_chunks = int(np.ceil(len(c) / chunk_len))
     X = adata.X
+    X_valid = X[valid_mask]
+    nb_chunks = int(np.ceil(len(c) / chunk_len))
     for i in range(nb_chunks):
         start, end = i * chunk_len, min((i + 1) * chunk_len, len(c))
         chunk_indices = c[start:end]
-        chunk_X = X[start:end]
+        chunk_X = X_valid[start:end]
         if sparse.issparse(chunk_X):
             chunk_X = chunk_X.toarray()
         spot_grid[chunk_indices] += np.asarray(chunk_X, dtype=np.int64)
@@ -166,6 +166,7 @@ def dump_patches_fixed(
     target_pixel_size: float = 0.5,
     use_mask: bool = True,
     tissue_mask: Optional[np.ndarray] = None,
+    oob_log_path: Optional[Union[str, Path]] = None,
 ):
     """Dump image patches centered on adata.obsm['spatial'] coordinates.
 
@@ -193,6 +194,33 @@ def dump_patches_fixed(
         & (coords_topleft[:, 0] + patch_size_src <= w)
         & (coords_topleft[:, 1] + patch_size_src <= h)
     )
+
+    if oob_log_path is not None:
+        oob_log_path = Path(oob_log_path)
+        dropped = int((~in_slide_mask).sum())
+        if dropped:
+            coord_min = coords_center.min(axis=0)
+            coord_max = coords_center.max(axis=0)
+            ratio_x = coord_max[0] / w if w else None
+            ratio_y = coord_max[1] / h if h else None
+            reason_hint = "coords_out_of_bounds"
+            if patch_size_src > min(w, h):
+                reason_hint = "patch_larger_than_image"
+            elif ratio_x and 1.8 <= ratio_x <= 2.2 or ratio_y and 1.8 <= ratio_y <= 2.2:
+                reason_hint = "possible_scale_mismatch"
+            header = (
+                "name\tdropped\ttotal\timg_w\timg_h\tpatch_size_src\t"
+                "coord_min_x\tcoord_min_y\tcoord_max_x\tcoord_max_y\treason_hint\n"
+            )
+            line = (
+                f"{name}\t{dropped}\t{len(in_slide_mask)}\t{w}\t{h}\t{patch_size_src:.2f}\t"
+                f"{coord_min[0]:.2f}\t{coord_min[1]:.2f}\t{coord_max[0]:.2f}\t{coord_max[1]:.2f}\t{reason_hint}\n"
+            )
+            if not oob_log_path.exists():
+                oob_log_path.parent.mkdir(parents=True, exist_ok=True)
+                oob_log_path.write_text(header, encoding="utf-8")
+            with oob_log_path.open("a", encoding="utf-8") as f:
+                f.write(line)
 
     coords_center = coords_center[in_slide_mask]
     adata = adata[in_slide_mask].copy()
