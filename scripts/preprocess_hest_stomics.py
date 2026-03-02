@@ -269,6 +269,7 @@ def main():
                         tif_path = candidate
                         break
                 patch_path = None
+                patch_spot_ids = None
                 if tif_path is not None and filtered_adata.shape[0] > 0:
                     # prefer uns pixel size; fallback to metadata column (positional access to avoid FutureWarning)
                     pixel_size_meta = None
@@ -290,13 +291,22 @@ def main():
                         )
                     patch_path = patch_dir / f"slide={sid}_images.npz"
                     oob_log_path = processed_dir / "patch_oob.log"
-                    dump_patches_fixed(
+                    patched_adata, _ = dump_patches_fixed(
                         filtered_adata,
                         tif_path,
                         patch_path.parent,
                         name=f"slide={sid}",
                         oob_log_path=oob_log_path,
                     )
+                    patch_spot_ids = {str(x) for x in patched_adata.obs_names}
+                    dropped_oob = filtered_adata.n_obs - len(patch_spot_ids)
+                    if dropped_oob > 0:
+                        logger.warning(
+                            "%s: %d/%d spots fell outside slide bounds; excluding from patch-linked spots metadata",
+                            sid,
+                            dropped_oob,
+                            filtered_adata.n_obs,
+                        )
                     logger.info("%s: saved patches -> %s", sid, patch_path)
                 else:
                     if tif_path is None:
@@ -305,6 +315,9 @@ def main():
                 # Record spots metadata
                 pixel_size_um = _get_pixel_size_um(filtered_adata)
                 for idx, spot in filtered_adata.obs.iterrows():
+                    has_patch = patch_path is not None and patch_spot_ids is not None and idx in patch_spot_ids
+                    if patch_path is not None and not has_patch:
+                        continue
                     spots_records.append(
                         {
                             "spot_id": idx,
@@ -315,7 +328,7 @@ def main():
                             "preservation_method": spot.get("preservation_method"),
                             "pixel_x": float(filtered_adata.obsm["spatial"][filtered_adata.obs_names.get_loc(idx)][0]),
                             "pixel_y": float(filtered_adata.obsm["spatial"][filtered_adata.obs_names.get_loc(idx)][1]),
-                            "patch_file": str(patch_path) if patch_path else None,
+                            "patch_file": str(patch_path) if has_patch else None,
                             "h5ad_file": str(out_path),
                             "pixel_size_um": pixel_size_um,
                             "tif_path": str(tif_path) if tif_path else None,

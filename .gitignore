@@ -64,3 +64,5 @@ wandb/
 
 her2st_annotations/
 HEST/
+assets/hgnc_complete_set.txt
+logs/

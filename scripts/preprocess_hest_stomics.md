@@ -45,6 +45,7 @@ python scripts/preprocess_hest_stomics.py \
 10) **Patches**:
     - If `<id>.tif` exists, extract **224×224** patches at **0.5 µm/px** (~112 µm FOV) centered on spots, resampling from source pixel size; save to `processed_<date>/patches/slide=<id>_images.npz` and write corresponding filtered AnnData.
     - Out-of-bounds spots are logged to `processed_<date>/patch_oob.log`. Patch extraction failures stop the run.
+    - For slides with patches, out-of-bounds spots are excluded from `spots.parquet` to keep `spot_id` fully aligned with patch indices.
 11) **Stats**:
     - Per-gene min/q1/median/q3/max/mean across spots per split.
     - Per-spot min/max/mean across genes per split.
@@ -54,7 +55,7 @@ python scripts/preprocess_hest_stomics.py \
     - Collect unique strings from metadata: `organ`, `st_technology`, `preservation_method`, plus all surviving genes.
     - Encode with `thomas-sounack/BioClinical-ModernBERT-base`; save `embeddings.npy`, mappings, and meta under `processed_<date>/embeddings/`.
 13) **Spots metadata**:
-    - Save `processed_<date>/spots.parquet` with one row per spot: `spot_id`, `slide_id`, `dataset_title`, `organ`, `st_technology`, `preservation_method`, spatial coords (px), `pixel_size_um`, `h5ad_file`, `patch_file`, `tif_path`.
+    - Save `processed_<date>/spots.parquet` with one row per recorded spot: `spot_id`, `slide_id`, `dataset_title`, `organ`, `st_technology`, `preservation_method`, spatial coords (px), `pixel_size_um`, `h5ad_file`, `patch_file`, `tif_path`.
 
 ## Outputs
 - Processed `.h5ad` files in `processed_<YYYYMMDD>/h5ad/`.
