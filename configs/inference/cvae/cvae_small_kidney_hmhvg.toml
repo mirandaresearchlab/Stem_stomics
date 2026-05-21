@@ -1,0 +1,23 @@
+device = "cuda"
+
+# [model] must match the trained checkpoint (cvae_small_kidney_hmhvg training config)
+[model]
+model            = "CVAE"
+hidden_size      = 512
+num_layers       = 3
+latent_dim       = 64
+cond_hidden_size = 256
+
+[data]
+slide_out          = "NCBI694"
+gene_list_filename = "selected_gene_list_200_hmhvg.txt"
+data_path          = "/storage/hest1k/kidney/"
+
+[sampling]
+sample_num_per_cond = 20
+seed                = 42
+sampling_batch_size = 1024
+
+[paths]
+save_path = "/storage/hest1k/kidney/results/cvae_small_200_hmhvg/000/samples/"
+ckpt      = "/storage/hest1k/kidney/results/cvae_small_200_hmhvg/000/checkpoints/LAST.pt"  # set to the trained checkpoint

@@ -1,0 +1,28 @@
+# Conditional VAE, "small" size — a natural-scale CVAE (~2.2M params),
+# ~16x smaller than the parameter-matched "large" variant. Useful for
+# checking whether the param-matched decoder is over-parameterized
+# (over-capacity makes posterior collapse more likely).
+
+[data]
+data_path            = "/storage/hest1k/her2st/"
+results_dir          = "/storage/hest1k/her2st/results/cvae_small_hmhvg/"
+slide_out            = "SPA148"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename   = "selected_gene_list_hmhvg.txt"
+num_aug_ratio        = 7
+
+[model]
+model            = "CVAE"
+hidden_size      = 512
+num_layers       = 3
+latent_dim       = 64
+cond_hidden_size = 256
+
+[training]
+lr                = 1e-4
+total_epochs      = 602
+global_batch_size = 256
+global_seed       = 42
+num_workers       = 1        # GPUs to run the job
+ckpt_every        = 550
+beta              = 1.0      # KL weight (1.0 = vanilla VAE)

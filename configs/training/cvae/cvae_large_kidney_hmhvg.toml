@@ -1,0 +1,27 @@
+# Conditional VAE, "large" size — parameter-matched to Stem/FM (~35.6M params).
+# hidden_size=2225 gives 35,649,062 params for the 200-gene panel
+# (Stem at depth=12/hidden=384 is 35,639,042).
+
+[data]
+data_path            = "/storage/hest1k/kidney/"
+results_dir          = "/storage/hest1k/kidney/results/cvae_large_200_hmhvg/"
+slide_out            = "NCBI694"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename   = "selected_gene_list_200_hmhvg.txt"
+num_aug_ratio        = 7
+
+[model]
+model            = "CVAE"
+hidden_size      = 2225
+num_layers       = 4
+latent_dim       = 256
+cond_hidden_size = 512
+
+[training]
+lr                = 1e-4
+total_epochs      = 316
+global_batch_size = 256
+global_seed       = 42
+num_workers       = 1        # GPUs to run the job
+ckpt_every        = 550
+beta              = 1.0      # KL weight (1.0 = vanilla VAE)
