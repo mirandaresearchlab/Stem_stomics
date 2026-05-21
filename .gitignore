@@ -65,3 +65,7 @@ wandb/
 her2st_annotations/
 
 logs/
+.claude/
+*.pdf
+assets/
+results/

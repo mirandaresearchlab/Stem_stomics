@@ -1,0 +1,10 @@
+[data]
+data_path          = "/proj/berzelius-2025-380/storage/hest1k/her2st/"
+processed_subdir   = "processed_data"
+st_subdir          = "st"
+slide_out          = "SPA148"
+gene_list_filename = "selected_gene_list_hmhvg.txt"
+
+[baseline]
+save_dir = "/proj/berzelius-2025-380/storage/felipe/workspace/Stem_stomics/results/spot_mean_oracle/her2st_hmhvg/"
+num_rep  = 1
