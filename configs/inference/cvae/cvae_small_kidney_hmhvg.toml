@@ -20,4 +20,4 @@ sampling_batch_size = 1024
 
 [paths]
 save_path = "/storage/hest1k/kidney/results/cvae_small_200_hmhvg/000/samples/"
-ckpt      = "/storage/hest1k/kidney/results/cvae_small_200_hmhvg/000/checkpoints/LAST.pt"  # set to the trained checkpoint
+ckpt      = "/storage/hest1k/kidney/results/cvae_small_200_hmhvg/000/checkpoints/0249640.pt"
