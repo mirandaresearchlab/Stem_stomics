@@ -8,11 +8,27 @@ from Stem.fm import create_flow_matching
 import argparse
 import numpy as np
 import os
+import time
 
 from pathlib import Path
 
 from settings.inference import InferenceConfig
 from utils.config_loader import load_toml_config
+
+
+def write_timing(cfg, sampling_seconds: float, num_rows: int):
+    """Write the wall-clock sampling time (and run parameters) to timing.txt."""
+    m, s = divmod(sampling_seconds, 60)
+    lines = [
+        f"sampling_seconds: {sampling_seconds:.3f}",
+        f"sampling_time: {int(m)}m{s:06.3f}s",
+        f"num_sampling_steps: {cfg.num_sampling_steps}",
+        f"device: {cfg.device}",
+        f"sampling_batch_size: {cfg.sampling_batch_size}",
+        f"num_conditioning_rows: {num_rows}",
+    ]
+    (cfg.save_path / "timing.txt").write_text("\n".join(lines) + "\n")
+    print("\n".join(lines))
 
 
 class CustomDataset(Dataset):
@@ -65,6 +81,7 @@ def main(cfg: InferenceConfig):
     loader = DataLoader(cfg.dataset, batch_size=cfg.sampling_batch_size, shuffle=False)
     all_samples = None
     first_batch = True
+    sampling_start = time.perf_counter()
     for i, (_, y) in enumerate(loader):
         y = y.to(device)
         model_kwargs = dict(y=y)
@@ -82,10 +99,14 @@ def main(cfg: InferenceConfig):
         else:
             all_samples = torch.cat((all_samples, samples.detach().cpu()), dim=0)
         print(str(i) + "/" + str(len(loader)) + " DONE")
+    if isinstance(device, str) and device.startswith("cuda"):
+        torch.cuda.synchronize()  # ensure all GPU work finished before stopping the timer
+    sampling_seconds = time.perf_counter() - sampling_start
 
     cfg.save_path.mkdir(parents=True, exist_ok=True)
     save_path_append = f"fm_generated_samples_{cfg.ckpt.stem}_{cfg.sample_num_per_cond}sample.pt"
     torch.save(all_samples, cfg.save_path / save_path_append)
+    write_timing(cfg, sampling_seconds, all_samples.shape[0])
 
 
 def parse_args() -> Path:

@@ -1,0 +1,30 @@
+# FM (flow matching) inference at 10 sampling steps — step-count benchmark variant (GPU).
+# Same checkpoint as configs/inference/fm/fm_kidney_hmhvg.toml (1000 steps);
+# only num_sampling_steps and device differ. Outputs go to a separate
+# benchmark dir so the other step-count samples are not overwritten.
+device = "cuda"
+
+[model]
+model = "Stem"
+DiT_num_blocks = 12
+hidden_size = 384
+num_heads = 6
+
+[data]
+slide_out = "NCBI694"
+gene_list_filename = "selected_gene_list_200_hmhvg.txt"
+data_path = "/proj/berzelius-2025-380/storage/hest1k/kidney/"
+
+[sampling]
+sample_num_per_cond = 20
+num_sampling_steps = 10
+seed = 42
+sampling_batch_size = 1024
+
+[paths]
+save_path = "/proj/berzelius-2025-380/storage/felipe/workspace/Stem_stomics/results/step_benchmark/fm_kidney_hmhvg_10/samples/"
+ckpt = "/proj/berzelius-2025-380/storage/hest1k/kidney/results/fm_runs_200_hmhvg/001/checkpoints/0249640.pt"
+
+[flow]
+time_scale = 1.0
+time_eps = 0.001

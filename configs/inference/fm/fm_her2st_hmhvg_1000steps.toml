@@ -1,0 +1,30 @@
+# FM (flow matching) inference at 1000 sampling steps — step-count benchmark variant (GPU).
+# Same checkpoint/steps as configs/inference/fm/fm_her2st_hmhvg.toml; this variant
+# writes to a separate benchmark dir so the reported-run samples are not
+# overwritten. Pairs with fm_her2st_hmhvg_50steps.toml for the timing comparison.
+device = "cuda"
+
+[model]
+model = "Stem"
+DiT_num_blocks = 12
+hidden_size = 384
+num_heads = 6
+
+[data]
+slide_out = "SPA148"
+gene_list_filename = "selected_gene_list_hmhvg.txt"
+data_path = "/proj/berzelius-2025-380/storage/hest1k/her2st/"
+
+[sampling]
+sample_num_per_cond = 20
+num_sampling_steps = 1000
+seed = 42
+sampling_batch_size = 1024
+
+[paths]
+save_path = "/proj/berzelius-2025-380/storage/felipe/workspace/Stem_stomics/results/step_benchmark/fm_her2st_hmhvg_1000/samples/"
+ckpt = "/proj/berzelius-2025-380/storage/hest1k/her2st/results/fm_runs_300_hmhvg/000/checkpoints/0240900.pt"
+
+[flow]
+time_scale = 1.0
+time_eps = 0.001

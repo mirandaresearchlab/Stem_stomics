@@ -1,0 +1,14 @@
+[data]
+data_path = "/proj/berzelius-2025-380/storage/hest1k/kidney/"
+processed_subdir = "processed_data"
+st_subdir = "st"
+slide_out = "NCBI694"
+folder_list_filename = "all_slide_lst.txt"
+gene_list_filename = "selected_gene_list_200_hmhvg.txt"
+
+[eval]
+sample_path = "/proj/berzelius-2025-380/storage/felipe/workspace/Stem_stomics/results/step_benchmark/fm_kidney_hmhvg_1000/samples/fm_generated_samples_0249640_20sample.pt"
+results_dir = "/proj/berzelius-2025-380/storage/felipe/workspace/Stem_stomics/results/step_benchmark/fm_kidney_hmhvg_1000/eval/"
+num_rep = 20
+num_selected = 20
+seed = 42
