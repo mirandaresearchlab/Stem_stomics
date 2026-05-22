@@ -33,6 +33,7 @@ class CVAETrainingConfig(BaseModel):
     num_workers: PositiveInt
     ckpt_every: PositiveInt
     beta: float = Field(1.0, description="KL weight in the beta-weighted ELBO (1.0 = vanilla VAE)")
+    grad_clip: float = Field(1.0, description="Max global gradient norm; <= 0 disables clipping")
 
 
 class CVAEInferenceConfig(BaseModel):

@@ -82,6 +82,8 @@ class Trainer:
         loss = loss_dict["loss"]
         self.optimizer.zero_grad()
         loss.backward()
+        if self.args.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.grad_clip)
         self.optimizer.step()
         update_ema(self.ema, self.model.module)
 
@@ -348,7 +350,7 @@ def main(world_size: int, available_gpus: list, cfg: CVAETrainingConfig):
     cfg.logger.info("Trainer finished loading.")
     cfg.logger.info("Starting...")
     trainer.train(args.total_epochs)
-    destroy_process_group()
+    dist.destroy_process_group()
 
 
 def parse_args() -> Path:

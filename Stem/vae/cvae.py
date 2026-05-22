@@ -80,6 +80,8 @@ class ConditionalVAE(nn.Module):
     def encode(self, x: torch.Tensor, c: torch.Tensor):
         h = self.encoder(torch.cat([x, c], dim=-1))
         mu, logvar = h.chunk(2, dim=-1)
+        # clamp logvar so exp(logvar) in the KL term cannot blow up to inf/nan
+        logvar = torch.clamp(logvar, min=-30.0, max=20.0)
         return mu, logvar
 
     @staticmethod

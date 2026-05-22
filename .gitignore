@@ -69,3 +69,4 @@ logs/
 *.pdf
 assets/
 results/
+slurm/

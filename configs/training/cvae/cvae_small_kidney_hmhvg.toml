@@ -26,3 +26,4 @@ global_seed       = 42
 num_workers       = 1        # GPUs to run the job
 ckpt_every        = 550
 beta              = 1.0      # KL weight (1.0 = vanilla VAE)
+grad_clip         = 1.0      # max global grad norm (<= 0 disables)
